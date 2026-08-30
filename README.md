@@ -1,0 +1,66 @@
+# 本地手机课程表
+
+本仓库同时包含 Android 与 iOS 工程，两端复用 `app/` 中的课程页面和 Excel 解析逻辑，并使用独立的应用外壳与构建产物。
+
+## Android 离线安装版
+
+安装包位于 `outputs/CourseSchedule-1.3.0.apk`，支持 Android 6.0 及以上系统。将 APK 传到手机后直接安装即可，不需要电脑、Wi-Fi 或服务器。
+
+- 安装包只包含空白课程表，不内置示例、真实课表或原始 Excel 数据。
+- 手机上新增、修改、删除的课程保存在应用私有空间。
+- 可分别设置“第一教学周基准日”和“实际开课日期”：基准日必须为星期一并用于计算周次，实际开课日期可为任意星期，在该日期前不会显示课程。
+- 可在“课程管理”中导入学校“节次 × 星期”格式的 `.xls` 或 `.xlsx` 课表；文件只在手机本地解析，确认后替换当前课程。
+- Android 端可在“图片识别”页面配置自己的 DeepSeek API Key，并识别 JPEG、PNG、GIF 或 WebP 图片课表；结果经用户确认后才会替换当前课程。
+- 当前日期、星期和时间直接读取手机系统时钟，每秒更新；默认第一教学周基准日与实际开课日期均为 2026-08-31，也可在手机端分别修改。
+- 正常覆盖安装新版本会保留修改；卸载应用会清除修改。
+- 课程功能离线可用；仅在用户主动检查或下载更新时连接 GitHub Releases。
+
+隐私迁移说明：1.3.0 首次启动时会清除旧版本保存的课程状态，避免历史内置数据继续显示；DeepSeek API Key 使用独立加密存储，不受此次清理影响。完成迁移后，后续正常覆盖安装仍会保留用户自行录入或导入的课程。
+
+## 应用内更新
+
+点击右上角 `i` 后可检查新版。应用读取 GitHub 最新 Release，下载其中的 APK 并交给 Android 系统安装器覆盖安装。Android 8 及以上首次使用时，需要按系统提示允许本应用安装未知来源应用；系统仍会校验包名与签名。
+
+更新采用完整 APK 覆盖安装，不是二进制差分补丁。只要保持应用 ID 与 `android/signing` 中的发布签名不变，本机课程修改会保留。
+
+## 使用方法
+
+以下步骤仅适用于原有的电脑浏览器版本：
+
+1. 双击当前目录里的 `打开课程表.vbs`，电脑浏览器会自动打开课程表。
+2. 点击右上角 `i`，查看手机访问地址。
+3. 让手机与电脑连接同一 Wi‑Fi，在手机浏览器输入该地址。
+4. 可在手机浏览器菜单中选择“添加到主屏幕”。
+
+课程修改会写入 `data/schedule.json`。使用手机时，电脑需要保持开机且课程表服务正在运行。
+
+## 数据与隐私
+
+- 仓库、Android APK 和 iOS IPA 均不包含课程示例、真实课程、地点或原始课表文件。
+- 首次安装显示空课表，课程只能由使用者在本机新增，或主动导入 Excel／图片课表。
+- Excel 文件仅在本机解析；图片只在使用者主动识别时发送给 DeepSeek。
+- `data/schedule.json` 是电脑浏览器版本运行后产生的本机数据文件，已被 Git 忽略，不参与移动端构建。
+
+## 构建与发布注意事项
+
+- 应用 ID：`com.local.courseschedule`；当前版本：`1.3.0`（versionCode 8）。
+- 更新源配置为 GitHub 仓库 `Plonkloving/CourseApp`，Release 中需至少包含一个 `.apk` 文件。
+- `android/signing/`、`android/keystore.properties`、真实 Excel 和真实课程数据不得上传公开仓库；发布新版必须继续使用原签名。
+- Excel 解析使用随 APK 打包的 SheetJS CE 0.20.3，许可证位于 `app/vendor/SheetJS-LICENSE.txt`。
+- DeepSeek 识图使用官方 `deepseek-v4-flash-vision-exp` 模型和 `https://api.deepseek.com/chat/completions`。API Key 只保存在 Android Keystore 加密后的本机私有存储中，不进入课程数据、日志、备份或仓库；课表图片会在用户主动识别时发送给 DeepSeek，可能产生 API 费用。
+
+## iOS 未签名开发版
+
+- iOS 工程位于 `ios/CourseSchedule.xcodeproj`，应用标识为 `com.local.courseschedule.ios`。
+- 支持系统时间、独立设置教学周基准日与实际开课日期、课程增删改和从“文件”应用导入 `.xls`/`.xlsx`。
+- GitHub Actions 会生成 `CourseSchedule-iOS-unsigned.ipa`。它仅供后续签名使用，未签名文件不能直接安装到普通 iPhone。
+- Android 更新只识别 APK；iOS 更新只识别 IPA，页面会显示当前平台。
+- 本地与 CI 构建都不会读取或打包 `data/` 中的课程数据。
+
+### iOS 签名与安装参考
+
+1. 在仓库的 GitHub Actions 成功构建页面底部下载 `CourseSchedule-iOS-unsigned`，解压后取得 `CourseSchedule-iOS-unsigned.ipa`。
+2. 参考视频：[《【2026最新版】苹果 IOS 傻瓜式自签教程！IPA 包安装教程！自带签名证书！》](https://www.bilibili.com/video/BV1tWdqBoEmK/)。视频演示了在手机端完成 IPA 签名与安装的方法。
+3. 将未签名 IPA 导入视频所用的签名工具，完成签名后再安装；如果 iOS 提示开发者不受信任，请按系统提示进入设置完成信任或验证。
+
+> 安全提示：该视频及其中的签名工具、网站和证书由第三方提供，与本项目无隶属关系。共享或“自带”证书可能随时失效或被苹果撤销，也可能接触你的 IPA 或设备信息。优先使用自己的 Apple ID 或可信证书，不要向不可信网站提交 Apple ID 密码、验证码或其他敏感信息。本项目不内置、不分发签名证书，也不保证第三方方法长期可用。

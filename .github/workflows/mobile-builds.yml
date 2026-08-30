@@ -1,0 +1,85 @@
+name: Mobile builds
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/mobile-builds.yml"
+      - "android/**"
+      - "ios/**"
+      - "app/**"
+      - "server.py"
+      - "tests/**"
+  pull_request:
+    paths:
+      - ".github/workflows/mobile-builds.yml"
+      - "android/**"
+      - "ios/**"
+      - "app/**"
+      - "server.py"
+      - "tests/**"
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Shared course tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: python -m unittest discover -s tests -v
+      - run: node --check app/app.js
+
+  android:
+    name: Android debug APK
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v6
+      - run: chmod +x gradlew
+        working-directory: android
+      - run: ./gradlew assembleDebug lintDebug
+        working-directory: android
+      - uses: actions/upload-artifact@v6
+        with:
+          name: CourseSchedule-Android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  ios:
+    name: iOS unsigned IPA
+    needs: tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build without Apple signing
+        run: >-
+          xcodebuild build
+          -project ios/CourseSchedule.xcodeproj
+          -scheme CourseSchedule
+          -configuration Release
+          -sdk iphoneos
+          -derivedDataPath build/ios
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p build/Payload
+          cp -R build/ios/Build/Products/Release-iphoneos/CourseSchedule.app build/Payload/
+          cd build
+          zip -qry CourseSchedule-iOS-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v6
+        with:
+          name: CourseSchedule-iOS-unsigned
+          path: build/CourseSchedule-iOS-unsigned.ipa
+          if-no-files-found: error

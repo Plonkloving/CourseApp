@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#173B57" />
+    <meta name="description" content="本地课程表" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon-192.png" />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>我的课程表</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="semesterName">课程表</p>
+          <h1>我的课程表</h1>
+        </div>
+        <button class="icon-button" id="infoButton" aria-label="查看手机访问方式">i</button>
+      </header>
+
+      <main>
+        <section class="week-panel" id="scheduleView">
+          <div class="term-status" id="termStatus"></div>
+          <div class="week-toolbar">
+            <button class="arrow-button" id="previousWeek" aria-label="上一周">‹</button>
+            <label class="week-title" id="weekPicker">
+              <strong id="weekNumber">第 1 周</strong>
+              <span id="weekRange">8月31日—9月6日</span>
+              <select id="weekSelect" aria-label="选择周次"></select>
+            </label>
+            <button class="arrow-button" id="nextWeek" aria-label="下一周">›</button>
+          </div>
+          <button class="today-button" id="todayButton">回到本周</button>
+
+          <div class="day-strip" id="dayStrip" aria-label="选择星期"></div>
+          <div class="day-heading">
+            <div>
+              <p id="selectedDateLabel">课程日期：星期一 · 2026年8月31日</p>
+              <h2 id="classCount">今天 0 节课</h2>
+            </div>
+            <span class="source-badge">本机数据</span>
+          </div>
+          <div class="course-list" id="courseList"></div>
+        </section>
+
+        <section class="manage-view hidden" id="manageView">
+          <div class="manage-heading">
+            <div>
+              <p class="eyebrow">本机文件持久保存</p>
+              <h2>课程管理</h2>
+            </div>
+            <div class="manage-actions">
+              <button class="secondary-button compact" id="importExcel" type="button">导入 Excel</button>
+              <button class="primary-button compact" id="addCourse" type="button">＋ 新增</button>
+              <input id="excelFile" class="hidden" type="file" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+            </div>
+          </div>
+          <p class="manage-note">可导入学校“节次 × 星期”格式的 .xls 或 .xlsx 文件。导入会沿用下方日期设置并替换当前课程；表格仅在本机解析。</p>
+          <div class="semester-settings">
+            <label for="weekOneStart">
+              <span>第一教学周基准日</span>
+              <input id="weekOneStart" type="date" />
+            </label>
+            <label for="classStartDate">
+              <span>实际开课日期</span>
+              <input id="classStartDate" type="date" />
+            </label>
+            <button class="primary-button compact" id="saveTeachingDates" type="button">保存日期</button>
+            <p id="teachingDateError" role="alert"></p>
+            <small>基准日必须是星期一，用于计算周次；实际开课日期可以是任意星期，在此日期之前不会显示课程。</small>
+          </div>
+          <div class="manage-list" id="manageList"></div>
+        </section>
+
+        <section class="vision-view hidden" id="visionView">
+          <div class="manage-heading">
+            <div>
+              <p class="eyebrow">Android · DeepSeek Vision</p>
+              <h2>图片课表识别</h2>
+            </div>
+          </div>
+          <p class="manage-note">选择图片后，图片会发送给 DeepSeek 视觉 API。识别结果必须由你确认后才会替换当前课程。</p>
+
+          <div class="vision-card">
+            <h3>1. 配置 API Key</h3>
+            <label class="field">DeepSeek API Key
+              <input id="deepSeekApiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="输入后加密保存在本机" />
+            </label>
+            <div class="vision-actions">
+              <button class="primary-button compact" id="saveDeepSeekKey" type="button">保存密钥</button>
+              <button class="secondary-button compact" id="deleteDeepSeekKey" type="button">删除密钥</button>
+            </div>
+            <p class="vision-status" id="deepSeekKeyStatus" role="status">正在读取配置…</p>
+            <small>密钥使用 Android Keystore 加密，不写入课程数据、日志或云备份，也不会显示回页面。</small>
+          </div>
+
+          <div class="vision-card">
+            <h3>2. 选择图片并识别</h3>
+            <input id="scheduleImage" class="hidden" type="file" accept="image/jpeg,image/png,image/gif,image/webp" />
+            <button class="secondary-button" id="chooseScheduleImage" type="button">选择图片课表</button>
+            <img class="vision-preview hidden" id="scheduleImagePreview" alt="待识别的课表图片预览" />
+            <button class="primary-button" id="recognizeScheduleImage" type="button" disabled>开始识别</button>
+            <p class="vision-status" id="visionStatus" role="status">支持 JPEG、PNG、GIF、WebP，单张图片不超过 12 MB。</p>
+          </div>
+
+          <div class="vision-card hidden" id="visionResultCard">
+            <h3>3. 核对识别结果</h3>
+            <div class="vision-results" id="visionResults"></div>
+            <button class="primary-button" id="importVisionResult" type="button">确认并替换当前课程</button>
+            <small>AI 可能误识别周次、节次或地点。导入后请逐项核对；教学周基准日和实际开课日期沿用“课程管理”中的本机设置。</small>
+          </div>
+        </section>
+      </main>
+
+      <nav class="bottom-nav" aria-label="主导航">
+        <button class="nav-item active" data-view="schedule"><span>▦</span>周课表</button>
+        <button class="nav-item" data-view="manage"><span>✎</span>课程管理</button>
+        <button class="nav-item android-only hidden" data-view="vision"><span>▣</span>图片识别</button>
+      </nav>
+    </div>
+
+    <dialog id="courseDialog" class="sheet-dialog">
+      <form id="courseForm" method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow" id="dialogEyebrow">修改上课安排</p>
+            <h2 id="dialogTitle">编辑课程</h2>
+          </div>
+          <button class="icon-button close-button" type="button" id="closeDialog" aria-label="关闭">×</button>
+        </div>
+        <input type="hidden" name="id" />
+        <div class="field-grid">
+          <label class="field span-2">课程名称<input name="name" required maxlength="80" /></label>
+          <label class="field">课程代码<input name="code" maxlength="30" /></label>
+          <label class="field">教师<input name="teacher" maxlength="40" /></label>
+          <label class="field">星期
+            <select name="day" required>
+              <option value="1">星期一</option><option value="2">星期二</option><option value="3">星期三</option>
+              <option value="4">星期四</option><option value="5">星期五</option><option value="6">星期六</option><option value="7">星期日</option>
+            </select>
+          </label>
+          <label class="field">周次<input name="weeksText" required placeholder="如 1-18单周、10-18、19" /></label>
+          <label class="field">开始节次<input name="periodStart" required type="number" min="1" max="13" /></label>
+          <label class="field">结束节次<input name="periodEnd" required type="number" min="1" max="13" /></label>
+          <label class="field span-2">上课地点<input name="location" required maxlength="100" /></label>
+          <label class="field span-2">校区<input name="campus" maxlength="100" /></label>
+          <label class="field span-2">备注<textarea name="notes" rows="2" maxlength="200"></textarea></label>
+        </div>
+        <p class="form-error" id="formError" role="alert"></p>
+        <div class="dialog-actions">
+          <button class="danger-button hidden" type="button" id="deleteCourse">删除</button>
+          <div class="action-spacer"></div>
+          <button class="secondary-button" type="button" id="cancelDialog">取消</button>
+          <button class="primary-button" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="infoDialog" class="info-dialog">
+      <div class="dialog-head">
+        <div><p class="eyebrow">手机端使用</p><h2>连接到课程表</h2></div>
+        <button class="icon-button close-button" type="button" id="closeInfo" aria-label="关闭">×</button>
+      </div>
+      <p id="infoLead">让手机和电脑连接同一 Wi‑Fi，并保持电脑上的课程表服务运行，然后在手机浏览器打开：</p>
+      <div id="lanUrls" class="lan-urls"><span>正在读取地址…</span></div>
+      <p class="muted" id="infoNote">在手机浏览器菜单中选择“添加到主屏幕”，即可像普通应用一样打开。修改会保存到电脑当前目录；当前日期和时间取自客户端系统时钟。</p>
+      <div class="update-panel hidden" id="updatePanel">
+        <div><strong id="appVersion">当前版本</strong><span id="updateStatus">可连接 GitHub 检查新版</span></div>
+        <button class="secondary-button compact" id="checkUpdate" type="button">检查更新</button>
+        <button class="primary-button compact hidden" id="downloadUpdate" type="button">下载并安装</button>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status"></div>
+    <div class="boot-error hidden" id="bootError" role="alert">
+      课程表脚本未能启动。请安装最新版本；如果问题仍然存在，请提供手机型号和系统版本。
+    </div>
+    <script>
+      window.__courseAppReady = false;
+      window.addEventListener("load", function () {
+        window.setTimeout(function () {
+          if (!window.__courseAppReady) {
+            document.getElementById("bootError").classList.remove("hidden");
+          }
+        }, 2500);
+      });
+    </script>
+    <script src="./vendor/xlsx.full.min.js" defer></script>
+    <script src="./excel-import.js" defer></script>
+    <script src="./app.js" defer></script>
+  </body>
+</html>

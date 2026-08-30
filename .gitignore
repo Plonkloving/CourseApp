@@ -1,0 +1,14 @@
+.toolchain/
+android/.gradle/
+android/app/build/
+android/local.properties
+android/keystore.properties
+android/signing/
+*.jks
+*.keystore
+*.xls
+*.xlsx
+data/schedule.json
+outputs/
+__pycache__/
+tests/__pycache__/

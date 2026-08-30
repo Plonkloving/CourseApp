@@ -45,6 +45,23 @@
           <div class="course-list" id="courseList"></div>
         </section>
 
+        <section class="month-view hidden" id="monthView">
+          <div class="month-toolbar">
+            <button class="arrow-button" id="previousMonth" type="button" aria-label="上个月">‹</button>
+            <div class="month-title">
+              <p class="eyebrow">月课表</p>
+              <h2 id="visibleMonthLabel"></h2>
+            </div>
+            <button class="arrow-button" id="nextMonth" type="button" aria-label="下个月">›</button>
+          </div>
+          <button class="today-button" id="currentMonth" type="button">回到本月</button>
+          <div class="month-weekdays" aria-hidden="true">
+            <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+          </div>
+          <div class="month-grid" id="monthGrid" aria-label="月课表日期"></div>
+          <p class="month-note">点击日期查看当天课程</p>
+        </section>
+
         <section class="manage-view hidden" id="manageView">
           <div class="manage-heading">
             <div>
@@ -116,6 +133,7 @@
 
       <nav class="bottom-nav" aria-label="主导航">
         <button class="nav-item active" data-view="schedule"><span>▦</span>周课表</button>
+        <button class="nav-item" data-view="month"><span>▦</span>月课表</button>
         <button class="nav-item" data-view="manage"><span>✎</span>课程管理</button>
         <button class="nav-item android-only hidden" data-view="vision"><span>▣</span>图片识别</button>
       </nav>
@@ -156,6 +174,19 @@
           <button class="primary-button" type="submit">保存</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="dayScheduleDialog" class="sheet-dialog day-schedule-dialog">
+      <div class="day-dialog-body">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow" id="dayScheduleMeta"></p>
+            <h2 id="dayScheduleTitle"></h2>
+          </div>
+          <button class="icon-button close-button" type="button" id="closeDaySchedule" aria-label="关闭">×</button>
+        </div>
+        <div class="day-dialog-courses" id="dayScheduleCourses"></div>
+      </div>
     </dialog>
 
     <dialog id="infoDialog" class="info-dialog">

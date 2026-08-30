@@ -36,7 +36,7 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("parseLocalDate(state.semester.weekOneStart)", script)
         self.assertIn("parseLocalDate(state.semester.classStartDate)", script)
         self.assertIn("function isTeachingDate(date)", script)
-        self.assertIn("(isTeachingDate(date) ? state.sessions : [])", script)
+        self.assertIn("const sessions = sessionsForDate(date);", script)
         self.assertIn('localStorage.removeItem("course-schedule-cache")', script)
 
     def test_teaching_dates_can_be_saved_separately(self):
@@ -48,6 +48,20 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("async function saveTeachingDates()", script)
         self.assertIn("parseLocalDate(nextWeekOneStart).getDay() !== 1", script)
         self.assertNotIn('id="semesterFirstDay"', html)
+
+    def test_month_view_opens_read_only_day_dialog(self):
+        html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "app" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('id="monthView"', html)
+        self.assertIn('data-view="month"', html)
+        self.assertIn('id="monthGrid"', html)
+        self.assertIn('id="dayScheduleDialog"', html)
+        self.assertIn("function monthGridDates(year, month)", script)
+        self.assertIn("function sessionsForDate(date)", script)
+        self.assertIn("function openDaySchedule(date)", script)
+        self.assertIn("courseCard(session, date, false)", script)
+        self.assertIn("repeat(7, minmax(0, 1fr))", styles)
 
     def test_android_asset_entry_uses_classic_script(self):
         html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")

@@ -24,6 +24,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .icon-button { width: 38px; height: 38px; border: 1px solid rgba(255,255,255,.3); border-radius: 50%; background: rgba(255,255,255,.09); color: inherit; font-weight: 800; cursor: pointer; }
 main { padding-bottom: calc(86px + var(--safe-bottom)); }
 .week-panel { padding-bottom: 24px; }
+.month-view { padding-bottom: 24px; }
 .term-status { padding: 10px 16px; background: #fff2df; color: #805224; font-size: 12px; font-weight: 700; text-align: center; }
 .term-status.in-term { background: #e5efe9; color: #37705a; }
 .term-status.after-term { background: #ececef; color: #626674; }
@@ -62,6 +63,20 @@ main { padding-bottom: calc(86px + var(--safe-bottom)); }
 .text-button { border: 0; background: transparent; color: var(--navy); font-size: 13px; font-weight: 800; cursor: pointer; }
 .empty-state { margin: 22px 4px; padding: 34px 20px; border: 1px dashed #c9d3d2; border-radius: 22px; color: var(--muted); text-align: center; }
 .empty-state strong { display: block; margin-bottom: 6px; color: var(--ink); font-size: 18px; }
+.month-toolbar { display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; gap: 6px; padding: 20px 16px 10px; background: var(--navy); color: white; }
+.month-title { text-align: center; }
+.month-title .eyebrow { color: #a9c0cf; }
+.month-title h2 { margin: 3px 0 0; font-size: 22px; }
+.month-weekdays, .month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.month-weekdays { padding: 20px 12px 8px; color: var(--muted); font-size: 12px; font-weight: 800; text-align: center; }
+.month-grid { gap: 5px; padding: 0 10px; }
+.month-day { position: relative; display: grid; align-content: start; justify-items: center; min-width: 0; min-height: 64px; padding: 8px 2px 5px; border: 1px solid transparent; border-radius: 14px; background: transparent; color: var(--ink); cursor: pointer; }
+.month-day.outside-month { color: #aab3b7; }
+.month-day.today { border-color: var(--navy); background: #edf2f3; }
+.month-day-number { font-size: 14px; font-weight: 800; }
+.month-course-marker { display: flex; align-items: center; gap: 4px; margin-top: 9px; color: var(--accent); font-size: 10px; font-weight: 800; }
+.month-course-marker::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.month-note { margin: 16px 0 0; color: var(--muted); font-size: 12px; text-align: center; }
 .bottom-nav { position: fixed; z-index: 10; left: 50%; bottom: 0; transform: translateX(-50%); display: flex; justify-content: space-around; width: min(100%, 720px); padding: 8px 18px calc(8px + var(--safe-bottom)); border-top: 1px solid var(--line); background: rgba(251,250,247,.94); backdrop-filter: blur(14px); }
 .nav-item { display: grid; gap: 3px; justify-items: center; padding: 7px; border: 0; background: transparent; color: #7b888f; font-size: 11px; font-weight: 700; cursor: pointer; }
 .nav-item { flex: 1; }
@@ -101,6 +116,9 @@ main { padding-bottom: calc(86px + var(--safe-bottom)); }
 .info-dialog { margin: auto; max-width: 500px; padding: 20px; }
 .sheet-dialog::backdrop, .info-dialog::backdrop { background: rgba(13,31,43,.5); backdrop-filter: blur(4px); }
 .sheet-dialog form { padding: 20px; }
+.day-dialog-body { padding: 20px; }
+.day-dialog-courses { display: grid; gap: 12px; overflow-y: auto; max-height: calc(88vh - 100px); }
+.day-dialog-courses .empty-state { margin: 0; }
 .dialog-head { display: flex; justify-content: space-between; align-items: start; margin-bottom: 18px; }
 .close-button { border-color: var(--line); background: white; color: var(--ink); font-size: 22px; }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

@@ -4,10 +4,11 @@
 
 ## Android 离线安装版
 
-安装包位于 `outputs/CourseSchedule-1.3.0.apk`，支持 Android 6.0 及以上系统。将 APK 传到手机后直接安装即可，不需要电脑、Wi-Fi 或服务器。
+安装包位于 `outputs/CourseSchedule-1.4.0.apk`，支持 Android 6.0 及以上系统。将 APK 传到手机后直接安装即可，不需要电脑、Wi-Fi 或服务器。
 
 - 安装包只包含空白课程表，不内置示例、真实课表或原始 Excel 数据。
 - 手机上新增、修改、删除的课程保存在应用私有空间。
+- 可切换到“月课表”查看整月课程标记，点击日期后通过弹窗查看当天课程详情。
 - 可分别设置“第一教学周基准日”和“实际开课日期”：基准日必须为星期一并用于计算周次，实际开课日期可为任意星期，在该日期前不会显示课程。
 - 可在“课程管理”中导入学校“节次 × 星期”格式的 `.xls` 或 `.xlsx` 课表；文件只在手机本地解析，确认后替换当前课程。
 - Android 端可在“图片识别”页面配置自己的 DeepSeek API Key，并识别 JPEG、PNG、GIF 或 WebP 图片课表；结果经用户确认后才会替换当前课程。
@@ -43,7 +44,7 @@
 
 ## 构建与发布注意事项
 
-- 应用 ID：`com.local.courseschedule`；当前版本：`1.3.0`（versionCode 8）。
+- 应用 ID：`com.local.courseschedule`；当前版本：`1.4.0`（versionCode 9）。
 - 更新源配置为 GitHub 仓库 `Plonkloving/CourseApp`，Release 中需至少包含一个 `.apk` 文件。
 - `android/signing/`、`android/keystore.properties`、真实 Excel 和真实课程数据不得上传公开仓库；发布新版必须继续使用原签名。
 - Excel 解析使用随 APK 打包的 SheetJS CE 0.20.3，许可证位于 `app/vendor/SheetJS-LICENSE.txt`。

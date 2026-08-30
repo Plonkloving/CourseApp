@@ -5,6 +5,7 @@ const DEFAULT_COLOR = "#3157A4";
 let state;
 let selectedWeek = 1;
 let selectedDay = 1;
+let visibleMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let activeView = "schedule";
 let toastTimer;
 let lastClockMinute = "";
@@ -18,6 +19,8 @@ const elements = {
   semesterName: $("#semesterName"), termStatus: $("#termStatus"), weekNumber: $("#weekNumber"), weekRange: $("#weekRange"),
   dayStrip: $("#dayStrip"), selectedDateLabel: $("#selectedDateLabel"), classCount: $("#classCount"),
   courseList: $("#courseList"), manageList: $("#manageList"), scheduleView: $("#scheduleView"),
+  monthView: $("#monthView"), monthGrid: $("#monthGrid"), visibleMonthLabel: $("#visibleMonthLabel"),
+  dayScheduleDialog: $("#dayScheduleDialog"), dayScheduleMeta: $("#dayScheduleMeta"), dayScheduleTitle: $("#dayScheduleTitle"), dayScheduleCourses: $("#dayScheduleCourses"),
   manageView: $("#manageView"), previousWeek: $("#previousWeek"), nextWeek: $("#nextWeek"),
   todayButton: $("#todayButton"), weekSelect: $("#weekSelect"), courseDialog: $("#courseDialog"), courseForm: $("#courseForm"),
   deleteCourse: $("#deleteCourse"), formError: $("#formError"), toast: $("#toast"),
@@ -78,6 +81,43 @@ function normalizeStateDates() {
   delete state.semester.firstDay;
 }
 
+function localDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function teachingInfoForDate(date) {
+  const weekStart = parseLocalDate(state.semester.weekOneStart);
+  const difference = Math.round((Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
+    - Date.UTC(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate())) / 86400000);
+  const nativeDay = date.getDay();
+  const inTerm = difference >= 0 && difference < state.semester.totalWeeks * 7;
+  return {
+    week: Math.floor(difference / 7) + 1,
+    day: nativeDay === 0 ? 7 : nativeDay,
+    inTerm,
+    teaching: inTerm && isTeachingDate(date)
+  };
+}
+
+function sessionsForDate(date) {
+  const info = teachingInfoForDate(date);
+  if (!info.teaching) return [];
+  return state.sessions
+    .filter((item) => item.day === info.day && item.weeks.includes(info.week))
+    .sort((a, b) => a.periodStart - b.periodStart);
+}
+
+function monthGridDates(year, month) {
+  const first = new Date(year, month, 1);
+  const leadingDays = (first.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cellCount = Math.max(35, Math.ceil((leadingDays + daysInMonth) / 7) * 7);
+  return Array.from({length: cellCount}, (_, index) => addDays(first, index - leadingDays));
+}
+
 function formatDate(date, withYear = false) {
   const prefix = withYear ? `${date.getFullYear()}年` : "";
   return `${prefix}${date.getMonth() + 1}月${date.getDate()}日`;
@@ -114,6 +154,7 @@ function render() {
   renderWeekHeader();
   renderDays();
   renderCourses();
+  renderMonthView();
   renderManageList();
 }
 
@@ -141,6 +182,7 @@ function refreshSystemClock() {
   if (minuteKey !== lastClockMinute) {
     lastClockMinute = minuteKey;
     renderCourses();
+    if (activeView === "month") renderMonthView();
   }
 }
 
@@ -171,8 +213,7 @@ function renderDays() {
   elements.dayStrip.querySelector(`[data-day="${selectedDay}"]`)?.scrollIntoView({inline: "center", block: "nearest"});
 }
 
-function liveStatus(session) {
-  const courseDate = dateFor(selectedWeek, selectedDay);
+function liveStatus(session, courseDate = dateFor(selectedWeek, selectedDay)) {
   const now = new Date();
   if (courseDate.toDateString() !== now.toDateString()) return "";
   const [startHour, startMinute] = (state.periods.find((item) => item.number === session.periodStart)?.start || "0:0").split(":").map(Number);
@@ -185,8 +226,8 @@ function liveStatus(session) {
   return "";
 }
 
-function courseCard(session) {
-  const status = liveStatus(session);
+function courseCard(session, courseDate = dateFor(selectedWeek, selectedDay), editable = true) {
+  const status = liveStatus(session, courseDate);
   return `<article class="course-card" style="--course-color:${escapeHtml(session.color || DEFAULT_COLOR)}">
     <div class="course-accent"></div>
     <div class="course-content">
@@ -195,7 +236,7 @@ function courseCard(session) {
       <div class="detail-row"><span class="detail-icon">◷</span><span>${periodTime(session)} · 第${session.periodStart}–${session.periodEnd}节</span></div>
       <div class="detail-row"><span class="detail-icon">⌖</span><span>${escapeHtml(session.location)}${session.campus ? `<br>${escapeHtml(session.campus)}` : ""}</span></div>
       ${session.teacher ? `<div class="detail-row"><span class="detail-icon">人</span><span>${escapeHtml(session.teacher)}</span></div>` : ""}
-      <div class="card-actions"><button class="text-button edit-course" data-id="${escapeHtml(session.id)}">修改此安排 →</button></div>
+      ${editable ? `<div class="card-actions"><button class="text-button edit-course" data-id="${escapeHtml(session.id)}">修改此安排 →</button></div>` : ""}
     </div>
   </article>`;
 }
@@ -205,16 +246,50 @@ function renderCourses() {
   const today = new Date();
   const actualDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const isActualToday = date.toDateString() === actualDate.toDateString();
-  const sessions = (isTeachingDate(date) ? state.sessions : [])
-    .filter((item) => item.day === selectedDay && item.weeks.includes(selectedWeek))
-    .sort((a, b) => a.periodStart - b.periodStart);
+  const sessions = sessionsForDate(date);
   elements.selectedDateLabel.textContent = `${isActualToday ? "今天" : "课程日期"}：${DAY_NAMES[selectedDay - 1]} · ${formatDate(date, true)}`;
   const periods = totalPeriods(sessions);
   elements.classCount.textContent = sessions.length ? `${sessions.length} 门课 · 共 ${periods} 节` : `${isActualToday ? "今天" : "该日"}没有课`;
   const beforeClassStart = date < parseLocalDate(state.semester.classStartDate);
   elements.courseList.innerHTML = sessions.length
-    ? sessions.map(courseCard).join("")
+    ? sessions.map((session) => courseCard(session, date)).join("")
     : `<div class="empty-state"><strong>${beforeClassStart ? "尚未到实际开课日期" : `${isActualToday ? "今天" : "该日"}没有课程`}</strong><span>${beforeClassStart ? `实际开课日期为 ${formatDate(parseLocalDate(state.semester.classStartDate), true)}` : "可以安心安排阅读、实验或休息。"}</span></div>`;
+}
+
+function renderMonthView() {
+  const year = visibleMonth.getFullYear();
+  const month = visibleMonth.getMonth();
+  const today = new Date();
+  const todayKey = localDateKey(today);
+  elements.visibleMonthLabel.textContent = `${year}年${month + 1}月`;
+  elements.monthGrid.innerHTML = monthGridDates(year, month).map((date) => {
+    const sessions = sessionsForDate(date);
+    const outside = date.getMonth() !== month;
+    const dateKey = localDateKey(date);
+    const label = `${formatDate(date, true)}，${sessions.length ? `${sessions.length}门课程` : "没有课程"}`;
+    return `<button class="month-day ${outside ? "outside-month" : ""} ${dateKey === todayKey ? "today" : ""}" type="button" data-date="${dateKey}" aria-label="${label}">
+      <span class="month-day-number">${date.getDate()}</span>
+      ${sessions.length ? `<span class="month-course-marker">${sessions.length}</span>` : ""}
+    </button>`;
+  }).join("");
+}
+
+function openDaySchedule(date) {
+  const info = teachingInfoForDate(date);
+  const sessions = sessionsForDate(date);
+  const classStart = parseLocalDate(state.semester.classStartDate);
+  elements.dayScheduleTitle.textContent = `${formatDate(date, true)} · ${DAY_NAMES[info.day - 1]}`;
+  elements.dayScheduleMeta.textContent = info.teaching
+    ? `第 ${info.week} 教学周 · ${sessions.length} 门课程`
+    : date < classStart ? "尚未到实际开课日期" : "本学期教学周范围之外";
+  if (sessions.length) {
+    elements.dayScheduleCourses.innerHTML = sessions.map((session) => courseCard(session, date, false)).join("");
+  } else {
+    const title = date < classStart ? "尚未到实际开课日期" : info.inTerm ? "当天没有课程" : "不在本学期教学周范围内";
+    const detail = date < classStart ? `实际开课日期为 ${formatDate(classStart, true)}` : "没有可显示的课程安排。";
+    elements.dayScheduleCourses.innerHTML = `<div class="empty-state"><strong>${title}</strong><span>${detail}</span></div>`;
+  }
+  elements.dayScheduleDialog.showModal();
 }
 
 function renderManageList() {
@@ -462,9 +537,11 @@ function showToast(message) {
 function switchView(view) {
   activeView = view;
   elements.scheduleView.classList.toggle("hidden", view !== "schedule");
+  elements.monthView.classList.toggle("hidden", view !== "month");
   elements.manageView.classList.toggle("hidden", view !== "manage");
   elements.visionView.classList.toggle("hidden", view !== "vision");
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
+  if (view === "month") renderMonthView();
   if (view === "manage") renderManageList();
   if (view === "vision") refreshDeepSeekKeyStatus();
   window.scrollTo({top: 0, behavior: "smooth"});
@@ -711,6 +788,29 @@ function bindEvents() {
     if (!button) return;
     selectedDay = Number(button.dataset.day); renderDays(); renderCourses();
   });
+  $("#previousMonth").addEventListener("click", () => {
+    visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1);
+    renderMonthView();
+  });
+  $("#nextMonth").addEventListener("click", () => {
+    visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1);
+    renderMonthView();
+  });
+  $("#currentMonth").addEventListener("click", () => {
+    const today = new Date();
+    visibleMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    renderMonthView();
+  });
+  elements.monthGrid.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-date]");
+    if (!button) return;
+    const date = parseLocalDate(button.dataset.date);
+    if (date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear()) {
+      visibleMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+      renderMonthView();
+    }
+    openDaySchedule(date);
+  });
   document.body.addEventListener("click", (event) => {
     const editor = event.target.closest(".edit-course");
     if (editor) openEditor(editor.dataset.id);
@@ -728,6 +828,10 @@ function bindEvents() {
   $("#importVisionResult").addEventListener("click", importVisionSchedule);
   $("#closeDialog").addEventListener("click", () => elements.courseDialog.close());
   $("#cancelDialog").addEventListener("click", () => elements.courseDialog.close());
+  $("#closeDaySchedule").addEventListener("click", () => elements.dayScheduleDialog.close());
+  elements.dayScheduleDialog.addEventListener("click", (event) => {
+    if (event.target === elements.dayScheduleDialog) elements.dayScheduleDialog.close();
+  });
   elements.courseForm.addEventListener("submit", submitCourse);
   elements.deleteCourse.addEventListener("click", deleteCurrentCourse);
   $("#infoButton").addEventListener("click", showInfo);

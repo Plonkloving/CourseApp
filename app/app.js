@@ -1,6 +1,9 @@
 const DAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"];
 const SHORT_DAYS = ["一", "二", "三", "四", "五", "六", "日"];
 const DEFAULT_COLOR = "#3157A4";
+const USAGE_NOTICE_VERSION = "1";
+const USAGE_NOTICE_STORAGE_KEY = "course-app-usage-notice";
+const IGNORED_UPDATE_STORAGE_KEY = "course-app-ignored-update";
 
 let state;
 let selectedWeek = 1;
@@ -10,6 +13,9 @@ let activeView = "schedule";
 let toastTimer;
 let lastClockMinute = "";
 let availableUpdateUrl = "";
+let availableUpdateVersion = "";
+let updateCheckMode = "manual";
+let resolveNoticeAcceptance;
 let selectedVisionFile;
 let recognizedSchedule;
 let visionPreviewUrl = "";
@@ -38,7 +44,8 @@ const elements = {
   recognizeScheduleImage: $("#recognizeScheduleImage"), visionStatus: $("#visionStatus"),
   visionResultCard: $("#visionResultCard"), visionResults: $("#visionResults"),
   mapView: $("#mapView"), campusMapList: $("#campusMapList"), campusMapDialog: $("#campusMapDialog"),
-  mapCanvas: $("#mapCanvas"), mapViewerImage: $("#mapViewerImage")
+  mapCanvas: $("#mapCanvas"), mapViewerImage: $("#mapViewerImage"),
+  usageNoticeDialog: $("#usageNoticeDialog"), startupUpdateDialog: $("#startupUpdateDialog")
 };
 
 function parseLocalDate(value) {
@@ -828,7 +835,7 @@ async function showInfo() {
     $("#infoLead").textContent = "课程查看、编辑和 Excel 导入均在本机完成，不需要连接电脑。";
     $("#infoNote").textContent = platform === "iOS"
       ? "仅在你主动检查更新时连接 GitHub。iOS 开发构建需要使用你自己的苹果签名后才能侧载；卸载应用会清除本机课程修改。"
-      : "仅在你主动点击“检查更新”或“下载并安装”时连接 GitHub。正常覆盖安装会保留本机课程修改；卸载应用会清除数据。";
+      : "启动时会连接 GitHub 检查新版，也可手动检查；只有确认下载后才会获取 APK。正常覆盖安装会保留本机课程修改；卸载应用会清除数据。";
     elements.lanUrls.innerHTML = "<span>本地模式 · 课程数据不上传</span>";
     $("#updatePanel").classList.remove("hidden");
     $("#appVersion").textContent = `当前版本 ${window.CourseAppNative.getAppVersion?.() || ""}${platform ? ` · ${platform}` : ""}`;
@@ -858,12 +865,45 @@ function isNewerVersion(latest, current) {
   return false;
 }
 
+function showUsageNoticeIfNeeded() {
+  if (localStorage.getItem(USAGE_NOTICE_STORAGE_KEY) === USAGE_NOTICE_VERSION) return Promise.resolve();
+  elements.usageNoticeDialog.showModal();
+  return new Promise((resolve) => { resolveNoticeAcceptance = resolve; });
+}
+
+function acceptUsageNotice() {
+  localStorage.setItem(USAGE_NOTICE_STORAGE_KEY, USAGE_NOTICE_VERSION);
+  elements.usageNoticeDialog.close();
+  resolveNoticeAcceptance?.();
+  resolveNoticeAcceptance = undefined;
+}
+
+function showStartupUpdate(result) {
+  if (localStorage.getItem(IGNORED_UPDATE_STORAGE_KEY) === result.latestVersion) return;
+  availableUpdateVersion = result.latestVersion;
+  $("#startupUpdateVersions").textContent = `当前版本 ${result.currentVersion}，最新版本 ${result.latestVersion}`;
+  $("#startupUpdateDate").textContent = result.publishedAt
+    ? `发布时间：${new Date(result.publishedAt).toLocaleDateString("zh-CN")}`
+    : "";
+  $("#startupUpdateNotes").textContent = String(result.releaseNotes || "此版本包含功能改进和问题修复。可前往 GitHub Release 查看完整说明。").trim().slice(0, 2000);
+  $("#installStartupUpdate").disabled = false;
+  elements.startupUpdateDialog.showModal();
+}
+
+async function runStartupPrompts() {
+  await showUsageNoticeIfNeeded();
+  if (nativePlatform() === "Android" && window.CourseAppNative?.checkForUpdate) checkForUpdate(true);
+}
+
 window.onNativeUpdateCheck = function (payload) {
   const result = JSON.parse(payload);
+  const mode = updateCheckMode;
+  updateCheckMode = "manual";
   const status = $("#updateStatus");
   const downloadButton = $("#downloadUpdate");
   $("#checkUpdate").disabled = false;
   availableUpdateUrl = "";
+  availableUpdateVersion = "";
   downloadButton.classList.add("hidden");
   if (!result.ok) {
     status.textContent = result.error || "暂时无法检查更新";
@@ -881,26 +921,33 @@ window.onNativeUpdateCheck = function (payload) {
     return;
   }
   availableUpdateUrl = packageUrl;
+  availableUpdateVersion = result.latestVersion;
   status.textContent = `发现新版本 ${result.latestVersion}`;
   downloadButton.textContent = platform === "iOS" ? "打开安装文件" : "下载并安装";
   downloadButton.classList.remove("hidden");
+  if (mode === "startup" && platform === "Android") showStartupUpdate(result);
 };
 
 window.onNativeUpdateStatus = function (message, isError) {
   $("#updateStatus").textContent = message;
-  if (isError) $("#downloadUpdate").disabled = false;
+  if (isError) {
+    $("#downloadUpdate").disabled = false;
+    $("#installStartupUpdate").disabled = false;
+  }
 };
 
-function checkForUpdate() {
+function checkForUpdate(automatic = false) {
   if (!window.CourseAppNative?.checkForUpdate) return;
+  updateCheckMode = automatic ? "startup" : "manual";
   $("#checkUpdate").disabled = true;
-  $("#updateStatus").textContent = "正在连接 GitHub 检查…";
+  if (!automatic) $("#updateStatus").textContent = "正在连接 GitHub 检查…";
   window.CourseAppNative.checkForUpdate();
 }
 
 function downloadUpdate() {
   if (!availableUpdateUrl || !window.CourseAppNative?.downloadUpdate) return;
   $("#downloadUpdate").disabled = true;
+  $("#installStartupUpdate").disabled = true;
   window.CourseAppNative.downloadUpdate(availableUpdateUrl);
 }
 
@@ -1006,8 +1053,19 @@ function bindEvents() {
   elements.deleteCourse.addEventListener("click", deleteCurrentCourse);
   $("#infoButton").addEventListener("click", showInfo);
   $("#closeInfo").addEventListener("click", () => elements.infoDialog.close());
-  $("#checkUpdate").addEventListener("click", checkForUpdate);
+  $("#checkUpdate").addEventListener("click", () => checkForUpdate());
   $("#downloadUpdate").addEventListener("click", downloadUpdate);
+  $("#acceptUsageNotice").addEventListener("click", acceptUsageNotice);
+  elements.usageNoticeDialog.addEventListener("cancel", (event) => event.preventDefault());
+  $("#laterStartupUpdate").addEventListener("click", () => elements.startupUpdateDialog.close());
+  $("#ignoreStartupUpdate").addEventListener("click", () => {
+    if (availableUpdateVersion) localStorage.setItem(IGNORED_UPDATE_STORAGE_KEY, availableUpdateVersion);
+    elements.startupUpdateDialog.close();
+  });
+  $("#installStartupUpdate").addEventListener("click", () => {
+    elements.startupUpdateDialog.close();
+    downloadUpdate();
+  });
 }
 
 async function initialize() {
@@ -1046,6 +1104,7 @@ async function initialize() {
   refreshSystemClock();
   setInterval(refreshSystemClock, 1000);
   window.__courseAppReady = true;
+  runStartupPrompts();
   if (!window.CourseAppNative && "serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
 

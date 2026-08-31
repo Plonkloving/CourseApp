@@ -733,6 +733,9 @@ public class MainActivity extends Activity {
                     result.put("latestVersion", release.optString("tag_name").replaceFirst("^[vV]", ""));
                     result.put("apkUrl", apkUrl);
                     result.put("releaseUrl", release.optString("html_url"));
+                    String releaseNotes = release.optString("body");
+                    result.put("releaseNotes", releaseNotes.length() > 2000 ? releaseNotes.substring(0, 2000) : releaseNotes);
+                    result.put("publishedAt", release.optString("published_at"));
                     sendUpdateResult(result);
                 } catch (Exception error) {
                     JSONObject result = new JSONObject();

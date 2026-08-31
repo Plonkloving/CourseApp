@@ -243,6 +243,34 @@
       </div>
     </dialog>
 
+    <dialog id="usageNoticeDialog" class="info-dialog startup-dialog" aria-labelledby="usageNoticeTitle">
+      <div class="dialog-head">
+        <div><p class="eyebrow">首次使用必读</p><h2 id="usageNoticeTitle">使用注意事项</h2></div>
+      </div>
+      <ul class="notice-list">
+        <li>课程时间、教学周和地点仅供参考，请以学校最新通知为准。</li>
+        <li>Excel 与图片识别结果可能有误，导入后请逐项人工核对。</li>
+        <li>课程、地图和 DeepSeek API Key 均保存在本机；卸载应用可能清除这些数据。</li>
+        <li>应用仅在检查更新、下载新版或使用图片识别时联网，不会上传本地课表和地图。</li>
+      </ul>
+      <button class="primary-button startup-primary" id="acceptUsageNotice" type="button">我已阅读并同意</button>
+    </dialog>
+
+    <dialog id="startupUpdateDialog" class="info-dialog startup-dialog" aria-labelledby="startupUpdateTitle">
+      <div class="dialog-head">
+        <div><p class="eyebrow">发现 Android 新版本</p><h2 id="startupUpdateTitle">可以更新课程表</h2></div>
+      </div>
+      <p id="startupUpdateVersions"></p>
+      <p class="update-release-date" id="startupUpdateDate"></p>
+      <div class="update-release-notes" id="startupUpdateNotes"></div>
+      <div class="dialog-actions startup-actions">
+        <button class="secondary-button" id="ignoreStartupUpdate" type="button">忽略此版本</button>
+        <div class="action-spacer"></div>
+        <button class="secondary-button" id="laterStartupUpdate" type="button">稍后提醒</button>
+        <button class="primary-button" id="installStartupUpdate" type="button">下载并安装</button>
+      </div>
+    </dialog>
+
     <div class="toast" id="toast" role="status"></div>
     <div class="boot-error hidden" id="bootError" role="alert">
       课程表脚本未能启动。请安装最新版本；如果问题仍然存在，请提供手机型号和系统版本。

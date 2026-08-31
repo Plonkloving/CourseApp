@@ -98,10 +98,18 @@ class ScheduleBehaviorTests(unittest.TestCase):
     def test_android_has_signed_release_update_flow(self):
         activity = (ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "local" / "courseschedule" / "MainActivity.java").read_text(encoding="utf-8")
         manifest = (ROOT / "android" / "app" / "src" / "main" / "AndroidManifest.xml").read_text(encoding="utf-8")
+        html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
         self.assertIn("/releases/latest", activity)
         self.assertIn("FileProvider.getUriForFile", activity)
         self.assertIn("canRequestPackageInstalls", activity)
         self.assertIn('return "Android"', activity)
+        self.assertIn('id="usageNoticeDialog"', html)
+        self.assertIn('id="startupUpdateDialog"', html)
+        self.assertIn("USAGE_NOTICE_VERSION", script)
+        self.assertIn("runStartupPrompts", script)
+        self.assertIn('result.put("releaseNotes"', activity)
+        self.assertIn('result.put("publishedAt"', activity)
         self.assertIn("android.permission.REQUEST_INSTALL_PACKAGES", manifest)
 
     def test_android_deepseek_vision_flow_and_key_protection(self):

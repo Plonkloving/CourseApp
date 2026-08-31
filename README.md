@@ -4,7 +4,7 @@
 
 ## Android 离线安装版
 
-安装包位于 `outputs/CourseSchedule-1.4.1.apk`，支持 Android 6.0 及以上系统。将 APK 传到手机后直接安装即可，不需要电脑、Wi-Fi 或服务器。
+安装包位于 `outputs/CourseSchedule-1.4.2.apk`，支持 Android 6.0 及以上系统。将 APK 传到手机后直接安装即可，不需要电脑、Wi-Fi 或服务器。
 
 - 安装包只包含空白课程表，不内置示例、真实课表或原始 Excel 数据。
 - 手机上新增、修改、删除的课程保存在应用私有空间。
@@ -14,14 +14,15 @@
 - 可在“课程管理”中导入学校“节次 × 星期”格式的 `.xls` 或 `.xlsx` 课表；文件只在手机本地解析，确认后替换当前课程。
 - Android 端可在“图片识别”页面配置自己的 DeepSeek API Key，并识别 JPEG、PNG、GIF 或 WebP 图片课表；结果经用户确认后才会替换当前课程。
 - 当前日期、星期和时间直接读取手机系统时钟，每秒更新；默认第一教学周基准日与实际开课日期均为 2026-08-31，也可在手机端分别修改。
+- 首次启动或注意事项版本更新时会显示使用须知；启动后会异步检查 Android 新版本，发现更新时显示版本、发布时间和 Release 说明。
 - 正常覆盖安装新版本会保留修改；卸载应用会清除修改。
-- 课程功能离线可用；仅在用户主动检查或下载更新时连接 GitHub Releases。
+- 课程功能离线可用；更新检查失败不会影响本地课程功能，只有用户确认后才会下载 APK。
 
 隐私迁移说明：1.3.0 首次启动时会清除旧版本保存的课程状态，避免历史内置数据继续显示；DeepSeek API Key 使用独立加密存储，不受此次清理影响。完成迁移后，后续正常覆盖安装仍会保留用户自行录入或导入的课程。
 
 ## 应用内更新
 
-点击右上角 `i` 后可检查新版。应用读取 GitHub 最新 Release，下载其中的 APK 并交给 Android 系统安装器覆盖安装。Android 8 及以上首次使用时，需要按系统提示允许本应用安装未知来源应用；系统仍会校验包名与签名。
+应用启动后会异步读取 GitHub 最新 Release；发现新版时弹出更新提示，也可点击右上角 `i` 手动检查。用户确认后，应用下载其中的 APK 并交给 Android 系统安装器覆盖安装。Android 8 及以上首次使用时，需要按系统提示允许本应用安装未知来源应用；系统仍会校验包名与签名。
 
 更新采用完整 APK 覆盖安装，不是二进制差分补丁。只要保持应用 ID 与 `android/signing` 中的发布签名不变，本机课程修改会保留。
 
@@ -45,7 +46,7 @@
 
 ## 构建与发布注意事项
 
-- 应用 ID：`com.local.courseschedule`；当前 Android 版本：`1.4.1`（versionCode 10）。
+- 应用 ID：`com.local.courseschedule`；当前 Android 版本：`1.4.2`（versionCode 11）。
 - 更新源配置为 GitHub 仓库 `Plonkloving/CourseApp`，Release 中需至少包含一个 `.apk` 文件。
 - `android/signing/`、`android/keystore.properties`、真实 Excel 和真实课程数据不得上传公开仓库；发布新版必须继续使用原签名。
 - Excel 解析使用随 APK 打包的 SheetJS CE 0.20.3，许可证位于 `app/vendor/SheetJS-LICENSE.txt`。

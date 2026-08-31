@@ -91,42 +91,47 @@
           <div class="manage-list" id="manageList"></div>
         </section>
 
-        <section class="vision-view hidden" id="visionView">
+        <section class="notification-view hidden" id="notificationView">
           <div class="manage-heading">
             <div>
-              <p class="eyebrow">Android · DeepSeek Vision</p>
-              <h2>图片课表识别</h2>
+              <p class="eyebrow">Android · 系统通知</p>
+              <h2>课程提醒</h2>
             </div>
           </div>
-          <p class="manage-note">选择图片后，图片会发送给 DeepSeek 视觉 API。识别结果必须由你确认后才会替换当前课程。</p>
+          <p class="manage-note">提醒默认关闭。开启后仅在本机计算每门课下一次有效上课时间，不会上传课程信息。</p>
 
-          <div class="vision-card">
-            <h3>1. 配置 API Key</h3>
-            <label class="field">DeepSeek API Key
-              <input id="deepSeekApiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="输入后加密保存在本机" />
+          <div class="notification-card">
+            <h3>提醒设置</h3>
+            <label class="setting-row">
+              <span><strong>启用课程提醒</strong><small>课程、日期或节次变化后自动重新安排</small></span>
+              <input id="notificationEnabled" type="checkbox" />
             </label>
-            <div class="vision-actions">
-              <button class="primary-button compact" id="saveDeepSeekKey" type="button">保存密钥</button>
-              <button class="secondary-button compact" id="deleteDeepSeekKey" type="button">删除密钥</button>
+            <label class="field">提前提醒
+              <select id="notificationLeadMinutes">
+                <option value="0">上课时</option>
+                <option value="5">提前 5 分钟</option>
+                <option value="10">提前 10 分钟</option>
+                <option value="15">提前 15 分钟</option>
+                <option value="30">提前 30 分钟</option>
+              </select>
+            </label>
+            <label class="setting-row">
+              <span><strong>显示课程详情</strong><small>在通知和锁屏中显示课程名称、时间与地点</small></span>
+              <input id="notificationShowDetails" type="checkbox" />
+            </label>
+            <button class="primary-button" id="saveNotificationSettings" type="button">保存提醒设置</button>
+          </div>
+
+          <div class="notification-card">
+            <h3>系统权限</h3>
+            <p class="notification-status" id="notificationPermissionStatus">正在读取通知权限…</p>
+            <p class="notification-status" id="exactAlarmStatus">正在读取精确闹钟权限…</p>
+            <div class="notification-actions">
+              <button class="secondary-button compact" id="requestNotificationPermission" type="button">申请通知权限</button>
+              <button class="secondary-button compact" id="openExactAlarmSettings" type="button">精确闹钟设置</button>
+              <button class="secondary-button compact" id="sendTestNotification" type="button">发送测试通知</button>
             </div>
-            <p class="vision-status" id="deepSeekKeyStatus" role="status">正在读取配置…</p>
-            <small>密钥使用 Android Keystore 加密，不写入课程数据、日志或云备份，也不会显示回页面。</small>
-          </div>
-
-          <div class="vision-card">
-            <h3>2. 选择图片并识别</h3>
-            <input id="scheduleImage" class="hidden" type="file" accept="image/jpeg,image/png,image/gif,image/webp" />
-            <button class="secondary-button" id="chooseScheduleImage" type="button">选择图片课表</button>
-            <img class="vision-preview hidden" id="scheduleImagePreview" alt="待识别的课表图片预览" />
-            <button class="primary-button" id="recognizeScheduleImage" type="button" disabled>开始识别</button>
-            <p class="vision-status" id="visionStatus" role="status">支持 JPEG、PNG、GIF、WebP，单张图片不超过 12 MB。</p>
-          </div>
-
-          <div class="vision-card hidden" id="visionResultCard">
-            <h3>3. 核对识别结果</h3>
-            <div class="vision-results" id="visionResults"></div>
-            <button class="primary-button" id="importVisionResult" type="button">确认并替换当前课程</button>
-            <small>AI 可能误识别周次、节次或地点。导入后请逐项核对；教学周基准日和实际开课日期沿用“课程管理”中的本机设置。</small>
+            <small>未获得精确闹钟权限时会自动降级，提醒可能存在几分钟偏差。没有设置具体开始时间的节次不会安排提醒；vivo 手机还需允许本应用自启动和后台运行。</small>
           </div>
         </section>
 
@@ -156,7 +161,7 @@
         <button class="nav-item" data-view="month"><span>▦</span>月课表</button>
         <button class="nav-item" data-view="manage"><span>✎</span>课程管理</button>
         <button class="nav-item android-only hidden" data-view="map"><span>⌖</span>校区地图</button>
-        <button class="nav-item android-only hidden" data-view="vision"><span>▣</span>图片识别</button>
+        <button class="nav-item android-only hidden" data-view="notification"><span>◷</span>课程提醒</button>
       </nav>
     </div>
 
@@ -249,9 +254,9 @@
       </div>
       <ul class="notice-list">
         <li>课程时间、教学周和地点仅供参考，请以学校最新通知为准。</li>
-        <li>Excel 与图片识别结果可能有误，导入后请逐项人工核对。</li>
-        <li>课程、地图和 DeepSeek API Key 均保存在本机；卸载应用可能清除这些数据。</li>
-        <li>应用仅在检查更新、下载新版或使用图片识别时联网，不会上传本地课表和地图。</li>
+        <li>Excel 导入结果可能有误，导入后请逐项人工核对。</li>
+        <li>课程、地图和提醒设置均保存在本机；卸载应用可能清除这些数据。</li>
+        <li>应用仅在检查更新或下载新版时联网，不会上传本地课表和地图。</li>
       </ul>
       <button class="primary-button startup-primary" id="acceptUsageNotice" type="button">我已阅读并同意</button>
     </dialog>

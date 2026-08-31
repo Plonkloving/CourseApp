@@ -2,6 +2,7 @@ package com.local.courseschedule;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -14,9 +15,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.provider.OpenableColumns;
-import android.security.keystore.KeyGenParameterSpec;
-import android.security.keystore.KeyProperties;
-import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -44,18 +42,13 @@ import java.security.KeyStore;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import javax.crypto.Cipher;
-import javax.crypto.KeyGenerator;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.GCMParameterSpec;
 
 
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 1001;
     private static final int MAP_PICKER_REQUEST = 1002;
     private static final int PDF_MAP_EDITOR_REQUEST = 1003;
+    private static final int NOTIFICATION_PERMISSION_REQUEST = 1004;
     private WebView webView;
     private NativeBridge nativeBridge;
     private ValueCallback<Uri[]> fileChooserCallback;
@@ -63,11 +56,15 @@ public class MainActivity extends Activity {
     private String pendingMapName = "";
     private String pendingMapCampus = "";
     private String pendingMapKind = "";
+    private String pendingCourseDate = "";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        pendingCourseDate = getIntent().getStringExtra("courseDate");
+        removeLegacyVisionSecrets(this);
+        CourseNotificationScheduler.createChannel(this);
         getWindow().setStatusBarColor(Color.rgb(23, 59, 87));
         getWindow().setNavigationBarColor(Color.rgb(251, 250, 247));
 
@@ -135,6 +132,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        CourseNotificationScheduler.reschedule(this);
+        sendNotificationSettingsChanged();
         if (pendingUpdate != null && (Build.VERSION.SDK_INT < Build.VERSION_CODES.O
                 || getPackageManager().canRequestPackageInstalls())) {
             File update = pendingUpdate;
@@ -187,6 +186,26 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String courseDate = intent.getStringExtra("courseDate");
+        if (courseDate != null && !courseDate.isEmpty()) {
+            pendingCourseDate = courseDate;
+            sendOpenCourseDate(courseDate);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == NOTIFICATION_PERMISSION_REQUEST) {
+            CourseNotificationScheduler.reschedule(this);
+            sendNotificationSettingsChanged();
+        }
+    }
+
+    @Override
     public void onBackPressed() {
         if (webView.canGoBack()) {
             webView.goBack();
@@ -218,14 +237,34 @@ public class MainActivity extends Activity {
         webView.post(() -> webView.evaluateJavascript(script, null));
     }
 
-    private void sendVisionResult(JSONObject result) {
-        String argument = JSONObject.quote(result.toString());
-        webView.post(() -> webView.evaluateJavascript("window.onNativeVisionResult(" + argument + ")", null));
-    }
-
     private void sendCampusMapResult(JSONObject result) {
         String argument = JSONObject.quote(result.toString());
         webView.post(() -> webView.evaluateJavascript("window.onNativeCampusMapImported(" + argument + ")", null));
+    }
+
+    private void sendNotificationSettingsChanged() {
+        if (webView != null) webView.post(() -> webView.evaluateJavascript("window.onNativeNotificationSettingsChanged?.()", null));
+    }
+
+    private void sendOpenCourseDate(String date) {
+        if (webView != null) webView.post(() -> webView.evaluateJavascript(
+                "window.onNativeNotificationOpen?.(" + JSONObject.quote(date) + ")", null));
+    }
+
+    private static void removeLegacyVisionSecrets(Context context) {
+        SharedPreferences preferences = context.getSharedPreferences("course_schedule", Context.MODE_PRIVATE);
+        if (preferences.getBoolean("vision_removed_1_4_3", false)) return;
+        boolean secretsCleared = context.getSharedPreferences("deepseek_secrets", Context.MODE_PRIVATE).edit().clear().commit();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) context.deleteSharedPreferences("deepseek_secrets");
+        boolean keyCleared = false;
+        try {
+            KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+            keyStore.load(null);
+            if (keyStore.containsAlias("course_schedule_deepseek_key")) keyStore.deleteEntry("course_schedule_deepseek_key");
+            keyCleared = true;
+        } catch (Exception ignored) {
+        }
+        if (secretsCleared && keyCleared) preferences.edit().putBoolean("vision_removed_1_4_3", true).commit();
     }
 
     private void launchCampusMapPicker(String kind, String name, String campus) {
@@ -259,21 +298,14 @@ public class MainActivity extends Activity {
         private static final String PREFERENCES = "course_schedule";
         private static final String STATE_KEY = "state_json";
         private static final String PRIVACY_RESET_KEY = "privacy_reset_1_3";
-        private static final String SECRET_PREFERENCES = "deepseek_secrets";
         private static final String CAMPUS_MAPS_KEY = "campus_maps_json";
         private static final long MAX_MAP_BYTES = 20L * 1024L * 1024L;
-        private static final String API_KEY_FIELD = "encrypted_api_key";
-        private static final String KEY_ALIAS = "course_schedule_deepseek_key";
-        private static final String VISION_MODEL = "deepseek-v4-flash-vision-exp";
         private final Context context;
         private final SharedPreferences preferences;
-        private final SharedPreferences secretPreferences;
-        private final AtomicBoolean visionBusy = new AtomicBoolean(false);
 
         NativeBridge(Context context) {
             this.context = context.getApplicationContext();
             this.preferences = this.context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
-            this.secretPreferences = this.context.getSharedPreferences(SECRET_PREFERENCES, Context.MODE_PRIVATE);
         }
 
         @JavascriptInterface
@@ -284,6 +316,86 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String getPlatform() {
             return "Android";
+        }
+
+        @JavascriptInterface
+        public String getNotificationSettings() {
+            try {
+                return CourseNotificationScheduler.settings(context).toString();
+            } catch (Exception error) {
+                return "{\"ok\":false,\"error\":\"无法读取提醒设置\"}";
+            }
+        }
+
+        @JavascriptInterface
+        public String saveNotificationSettings(boolean enabled, int leadMinutes, boolean showDetails) {
+            JSONObject result = new JSONObject();
+            try {
+                CourseNotificationScheduler.saveSettings(context, enabled, leadMinutes, showDetails);
+                result.put("ok", true);
+            } catch (Exception error) {
+                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
+            }
+            return result.toString();
+        }
+
+        @JavascriptInterface
+        public String requestNotificationPermission() {
+            JSONObject result = new JSONObject();
+            try {
+                SharedPreferences notificationPreferences = context.getSharedPreferences("course_notifications", Context.MODE_PRIVATE);
+                boolean alreadyRequested = notificationPreferences.getBoolean("permission_requested", false);
+                if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                        && !alreadyRequested) {
+                    notificationPreferences.edit().putBoolean("permission_requested", true).apply();
+                    webView.post(() -> requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_PERMISSION_REQUEST));
+                    result.put("ok", true).put("requested", true);
+                } else if (!CourseNotificationScheduler.notificationsGranted(context)) {
+                    Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+                    webView.post(() -> startActivity(intent));
+                    result.put("ok", true).put("requested", false).put("openedSettings", true);
+                } else {
+                    result.put("ok", true).put("requested", false).put("openedSettings", false);
+                }
+            } catch (Exception error) {
+                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
+            }
+            return result.toString();
+        }
+
+        @JavascriptInterface
+        public String openExactAlarmSettings() {
+            JSONObject result = new JSONObject();
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + getPackageName()));
+                    webView.post(() -> startActivity(intent));
+                }
+                result.put("ok", true);
+            } catch (Exception error) {
+                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
+            }
+            return result.toString();
+        }
+
+        @JavascriptInterface
+        public String sendTestNotification() {
+            JSONObject result = new JSONObject();
+            try {
+                CourseNotificationScheduler.showTestNotification(context);
+                result.put("ok", true);
+            } catch (Exception error) {
+                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
+            }
+            return result.toString();
+        }
+
+        @JavascriptInterface
+        public String getLaunchCourseDate() {
+            String date = pendingCourseDate == null ? "" : pendingCourseDate;
+            pendingCourseDate = "";
+            return date;
         }
 
         @JavascriptInterface
@@ -512,195 +624,11 @@ public class MainActivity extends Activity {
             return clean.length() > limit ? clean.substring(0, limit) : clean;
         }
 
-        @JavascriptInterface
-        public String hasDeepSeekApiKey() {
-            JSONObject result = new JSONObject();
-            try {
-                String encrypted = secretPreferences.getString(API_KEY_FIELD, "");
-                result.put("configured", !encrypted.isEmpty() && !decryptApiKey(encrypted).isEmpty());
-            } catch (Exception error) {
-                try { result.put("configured", false); } catch (Exception ignored) {}
-            }
-            return result.toString();
-        }
-
-        @JavascriptInterface
-        public String saveDeepSeekApiKey(String value) {
-            JSONObject result = new JSONObject();
-            try {
-                String key = value == null ? "" : value.trim();
-                if (key.length() < 12 || key.length() > 512 || key.matches(".*\\s+.*")) {
-                    throw new Exception("API Key 格式不正确");
-                }
-                if (!secretPreferences.edit().putString(API_KEY_FIELD, encryptApiKey(key)).commit()) {
-                    throw new Exception("手机存储写入失败");
-                }
-                result.put("ok", true);
-            } catch (Exception error) {
-                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
-            }
-            return result.toString();
-        }
-
-        @JavascriptInterface
-        public String deleteDeepSeekApiKey() {
-            JSONObject result = new JSONObject();
-            try {
-                if (!secretPreferences.edit().remove(API_KEY_FIELD).commit()) throw new Exception("删除失败");
-                KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
-                keyStore.load(null);
-                if (keyStore.containsAlias(KEY_ALIAS)) keyStore.deleteEntry(KEY_ALIAS);
-                result.put("ok", true);
-            } catch (Exception error) {
-                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
-            }
-            return result.toString();
-        }
-
-        @JavascriptInterface
-        public String recognizeSchedule(String dataUrl) {
-            JSONObject acknowledgement = new JSONObject();
-            try {
-                validateImageDataUrl(dataUrl);
-                String encrypted = secretPreferences.getString(API_KEY_FIELD, "");
-                if (encrypted.isEmpty()) throw new Exception("请先保存 DeepSeek API Key");
-                String apiKey = decryptApiKey(encrypted);
-                if (!visionBusy.compareAndSet(false, true)) throw new Exception("已有识别任务正在进行");
-                new Thread(() -> recognizeScheduleRequest(dataUrl, apiKey), "deepseek-vision").start();
-                acknowledgement.put("ok", true);
-            } catch (Exception error) {
-                try { acknowledgement.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
-            }
-            return acknowledgement.toString();
-        }
-
-        private void recognizeScheduleRequest(String dataUrl, String apiKey) {
-            HttpURLConnection connection = null;
-            JSONObject result = new JSONObject();
-            try {
-                JSONObject imageUrl = new JSONObject().put("url", dataUrl).put("detail", "original");
-                JSONArray content = new JSONArray()
-                        .put(new JSONObject().put("type", "text").put("text", visionPrompt()))
-                        .put(new JSONObject().put("type", "image_url").put("image_url", imageUrl));
-                JSONArray messages = new JSONArray().put(new JSONObject().put("role", "user").put("content", content));
-                JSONObject request = new JSONObject()
-                        .put("model", VISION_MODEL)
-                        .put("messages", messages)
-                        .put("response_format", new JSONObject().put("type", "json_object"))
-                        .put("max_tokens", 8192)
-                        .put("stream", false);
-                byte[] body = request.toString().getBytes(StandardCharsets.UTF_8);
-
-                connection = (HttpURLConnection) new URL("https://api.deepseek.com/chat/completions").openConnection();
-                connection.setConnectTimeout(20000);
-                connection.setReadTimeout(120000);
-                connection.setRequestMethod("POST");
-                connection.setDoOutput(true);
-                connection.setFixedLengthStreamingMode(body.length);
-                connection.setRequestProperty("Content-Type", "application/json");
-                connection.setRequestProperty("Authorization", "Bearer " + apiKey);
-                connection.setRequestProperty("User-Agent", "CourseSchedule-Android/" + BuildConfig.VERSION_NAME);
-                try (java.io.OutputStream output = connection.getOutputStream()) {
-                    output.write(body);
-                }
-                int status = connection.getResponseCode();
-                if (status != HttpURLConnection.HTTP_OK) {
-                    String detail = connection.getErrorStream() == null ? "" : readText(connection.getErrorStream());
-                    throw new Exception(apiError(status, detail));
-                }
-                JSONObject response = new JSONObject(readText(connection.getInputStream()));
-                String output = response.getJSONArray("choices").getJSONObject(0)
-                        .getJSONObject("message").optString("content", "").trim();
-                if (output.startsWith("```")) output = output.replaceFirst("^```(?:json)?\\s*", "").replaceFirst("\\s*```$", "");
-                JSONObject schedule = new JSONObject(output);
-                validateRecognizedSchedule(schedule);
-                result.put("ok", true).put("schedule", schedule);
-            } catch (Exception error) {
-                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
-            } finally {
-                visionBusy.set(false);
-                if (connection != null) connection.disconnect();
-                sendVisionResult(result);
-            }
-        }
-
-        private void validateImageDataUrl(String dataUrl) throws Exception {
-            if (dataUrl == null) throw new Exception("没有读取到图片");
-            int comma = dataUrl.indexOf(',');
-            if (comma < 0) throw new Exception("图片数据格式不正确");
-            String header = dataUrl.substring(0, comma).toLowerCase(Locale.ROOT);
-            if (!(header.equals("data:image/jpeg;base64") || header.equals("data:image/png;base64")
-                    || header.equals("data:image/gif;base64") || header.equals("data:image/webp;base64"))) {
-                throw new Exception("图片格式不受支持");
-            }
-            long estimatedBytes = (long) (dataUrl.length() - comma - 1) * 3L / 4L;
-            if (estimatedBytes > 12L * 1024L * 1024L) throw new Exception("图片超过 12 MB");
-        }
-
-        private void validateRecognizedSchedule(JSONObject schedule) throws Exception {
-            JSONArray sessions = schedule.getJSONArray("sessions");
-            if (sessions.length() == 0 || sessions.length() > 500) throw new Exception("未识别到有效课程安排");
-            for (int index = 0; index < sessions.length(); index++) {
-                JSONObject item = sessions.getJSONObject(index);
-                int day = item.optInt("day"), start = item.optInt("periodStart"), end = item.optInt("periodEnd");
-                if (item.optString("name").trim().isEmpty() || day < 1 || day > 7 || start < 1 || end < start
-                        || item.optJSONArray("weeks") == null || item.getJSONArray("weeks").length() == 0) {
-                    throw new Exception("识别结果包含不完整课程，请换用更清晰的图片");
-                }
-            }
-        }
-
-        private String visionPrompt() {
-            return "识别这张课程表图片，只记录图片中明确可见的信息，不要猜测。输出合法 json 对象："
-                    + "{\"title\":\"学期名称\",\"totalWeeks\":18,\"periods\":[{\"number\":1,\"start\":\"08:30\",\"end\":\"09:15\"}],"
-                    + "\"sessions\":[{\"name\":\"课程名\",\"code\":\"课程代码\",\"teacher\":\"教师\",\"day\":1,\"periodStart\":1,\"periodEnd\":2,"
-                    + "\"weeks\":[1,2],\"location\":\"地点\",\"campus\":\"校区\",\"notes\":\"备注\"}]}。"
-                    + "day 必须用 1 至 7 表示星期一至星期日；weeks 必须展开成整数数组；未知文本填空字符串。";
-        }
-
-        private String apiError(int status, String body) {
-            try {
-                String message = new JSONObject(body).getJSONObject("error").optString("message", "");
-                if (!message.isEmpty()) return "DeepSeek 返回 " + status + "：" + message;
-            } catch (Exception ignored) {}
-            return "DeepSeek 返回 HTTP " + status;
-        }
-
         private String safeMessage(Exception error) {
             String message = error.getMessage();
             if (message == null || message.trim().isEmpty()) return "操作失败";
             message = message.replace('\n', ' ').replace('\r', ' ').trim();
-            message = message.replaceAll("sk-[A-Za-z0-9_-]{8,}", "sk-***");
             return message.length() > 240 ? message.substring(0, 240) : message;
-        }
-
-        private String encryptApiKey(String value) throws Exception {
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, getOrCreateSecretKey());
-            String iv = Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP);
-            String encrypted = Base64.encodeToString(cipher.doFinal(value.getBytes(StandardCharsets.UTF_8)), Base64.NO_WRAP);
-            return iv + ":" + encrypted;
-        }
-
-        private String decryptApiKey(String value) throws Exception {
-            String[] parts = value.split(":", 2);
-            if (parts.length != 2) throw new Exception("密钥存储已损坏，请重新配置");
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, getOrCreateSecretKey(), new GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)));
-            return new String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), StandardCharsets.UTF_8);
-        }
-
-        private SecretKey getOrCreateSecretKey() throws Exception {
-            KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
-            keyStore.load(null);
-            if (keyStore.containsAlias(KEY_ALIAS)) return ((KeyStore.SecretKeyEntry) keyStore.getEntry(KEY_ALIAS, null)).getSecretKey();
-            KeyGenerator generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
-            generator.init(new KeyGenParameterSpec.Builder(KEY_ALIAS,
-                    KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .build());
-            return generator.generateKey();
         }
 
         @JavascriptInterface
@@ -812,6 +740,7 @@ public class MainActivity extends Activity {
                 return "{\"ok\":false,\"error\":\"课程数据结构不合法\"}";
             }
             boolean saved = preferences.edit().putString(STATE_KEY, json).commit();
+            if (saved) CourseNotificationScheduler.reschedule(context);
             return saved ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"手机存储写入失败\"}";
         }
 

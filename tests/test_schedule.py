@@ -112,23 +112,42 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn('result.put("publishedAt"', activity)
         self.assertIn("android.permission.REQUEST_INSTALL_PACKAGES", manifest)
 
-    def test_android_deepseek_vision_flow_and_key_protection(self):
+    def test_android_removes_vision_and_cleans_legacy_key(self):
         activity = (ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "local" / "courseschedule" / "MainActivity.java").read_text(encoding="utf-8")
         html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
-        backup = (ROOT / "android" / "app" / "src" / "main" / "res" / "xml" / "backup_rules.xml").read_text(encoding="utf-8")
-        extraction = (ROOT / "android" / "app" / "src" / "main" / "res" / "xml" / "data_extraction_rules.xml").read_text(encoding="utf-8")
-        self.assertIn('id="visionView"', html)
-        self.assertIn("window.onNativeVisionResult", script)
-        self.assertIn("deepseek-v4-flash-vision-exp", activity)
-        self.assertIn("https://api.deepseek.com/chat/completions", activity)
-        self.assertIn('Cipher.getInstance("AES/GCM/NoPadding")', activity)
+        self.assertNotIn('id="visionView"', html)
+        self.assertNotIn("window.onNativeVisionResult", script)
+        self.assertNotIn("recognizeSchedule", activity)
+        self.assertNotIn("api.deepseek.com", activity)
+        self.assertNotIn("deepseek-v4-flash-vision-exp", activity)
+        self.assertIn("removeLegacyVisionSecrets", activity)
+        self.assertIn('deleteSharedPreferences("deepseek_secrets")', activity)
         self.assertIn('KeyStore.getInstance("AndroidKeyStore")', activity)
-        self.assertIn('exclude domain="sharedpref" path="deepseek_secrets.xml"', backup)
-        self.assertIn('exclude domain="sharedpref" path="deepseek_secrets.xml"', extraction)
         self.assertNotIn("System.out", activity)
 
-    def test_repository_contains_no_deepseek_api_key_literal(self):
+    def test_android_course_notifications_follow_schedule_changes(self):
+        root = ROOT / "android" / "app" / "src" / "main"
+        activity = (root / "java" / "com" / "local" / "courseschedule" / "MainActivity.java").read_text(encoding="utf-8")
+        scheduler = (root / "java" / "com" / "local" / "courseschedule" / "CourseNotificationScheduler.java").read_text(encoding="utf-8")
+        manifest = (root / "AndroidManifest.xml").read_text(encoding="utf-8")
+        html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('id="notificationView"', html)
+        self.assertIn("refreshNotificationSettings", script)
+        self.assertIn("openCourseDateFromNotification", script)
+        self.assertIn("CourseNotificationScheduler.reschedule(context)", activity)
+        self.assertIn("nextOccurrence", scheduler)
+        self.assertIn("classStartDate", scheduler)
+        self.assertIn("setExactAndAllowWhileIdle", scheduler)
+        self.assertIn("setAndAllowWhileIdle", scheduler)
+        self.assertIn("android.permission.POST_NOTIFICATIONS", manifest)
+        self.assertIn("android.permission.SCHEDULE_EXACT_ALARM", manifest)
+        self.assertIn('android:name=".CourseAlarmReceiver"', manifest)
+        self.assertIn('android:name=".CourseBootReceiver"', manifest)
+        self.assertIn("android.intent.action.BOOT_COMPLETED", manifest)
+
+    def test_repository_contains_no_api_key_literal(self):
         candidates = [ROOT / "app", ROOT / "android", ROOT / "ios", ROOT / ".github", ROOT / "README.md"]
         key_pattern = re.compile(r"sk-[A-Za-z0-9_-]{20,}")
         leaks = []

@@ -83,7 +83,7 @@ main { padding-bottom: calc(86px + var(--safe-bottom)); }
 .nav-item span { font-size: 20px; line-height: 1; }
 .nav-item.active { color: var(--navy); }
 .manage-view { padding: 22px 0; }
-.vision-view { padding: 22px 0; }
+.notification-view { padding: 22px 0; }
 .map-view { padding: 22px 0; }
 .manage-heading { display: flex; justify-content: space-between; align-items: center; padding: 0 20px; }
 .manage-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
@@ -94,16 +94,16 @@ main { padding-bottom: calc(86px + var(--safe-bottom)); }
 .semester-settings p { grid-column: 1 / -1; min-height: 0; margin: 0; color: #a53d31; font-size: 12px; }
 .semester-settings p:empty { display: none; }
 .semester-settings small { grid-column: 1 / -1; color: var(--muted); line-height: 1.45; }
-.vision-card { display: grid; gap: 12px; margin: 0 16px 14px; padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: #fff; }
-.vision-card h3 { margin: 0; font-size: 17px; }
-.vision-card small { color: var(--muted); line-height: 1.5; }
-.vision-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.vision-status { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.vision-status.error { color: #a53d31; }
-.vision-preview { width: 100%; max-height: 320px; object-fit: contain; border: 1px solid var(--line); border-radius: 14px; background: #f5f7f6; }
-.vision-results { display: grid; gap: 8px; color: #53656f; font-size: 13px; line-height: 1.5; }
-.vision-result-item { padding: 10px 12px; border-radius: 12px; background: #f3f6f5; }
-.vision-result-item strong { color: var(--ink); }
+.notification-card { display: grid; gap: 14px; margin: 0 16px 14px; padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: #fff; }
+.notification-card h3 { margin: 0; font-size: 17px; }
+.notification-card small { color: var(--muted); line-height: 1.5; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.setting-row span { display: grid; gap: 3px; }
+.setting-row input { width: 22px; height: 22px; flex: 0 0 auto; }
+.notification-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.notification-status { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.notification-status.ok { color: #267250; }
+.notification-status.error { color: #a53d31; }
 .map-import-card { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 16px 18px; padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: #fff; }
 .map-import-actions, .map-import-card small { grid-column: 1 / -1; }
 .map-import-actions { display: flex; flex-wrap: wrap; gap: 8px; }

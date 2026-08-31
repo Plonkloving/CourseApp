@@ -1,7 +1,7 @@
 const DAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"];
 const SHORT_DAYS = ["一", "二", "三", "四", "五", "六", "日"];
 const DEFAULT_COLOR = "#3157A4";
-const USAGE_NOTICE_VERSION = "1";
+const USAGE_NOTICE_VERSION = "2";
 const USAGE_NOTICE_STORAGE_KEY = "course-app-usage-notice";
 const IGNORED_UPDATE_STORAGE_KEY = "course-app-ignored-update";
 
@@ -16,9 +16,6 @@ let availableUpdateUrl = "";
 let availableUpdateVersion = "";
 let updateCheckMode = "manual";
 let resolveNoticeAcceptance;
-let selectedVisionFile;
-let recognizedSchedule;
-let visionPreviewUrl = "";
 let campusMaps = [];
 let mapScale = 1;
 let mapBaseScale = 1;
@@ -39,10 +36,8 @@ const elements = {
   deleteCourse: $("#deleteCourse"), formError: $("#formError"), toast: $("#toast"),
   infoDialog: $("#infoDialog"), lanUrls: $("#lanUrls"), excelFile: $("#excelFile"),
   weekOneStart: $("#weekOneStart"), classStartDate: $("#classStartDate"), teachingDateError: $("#teachingDateError"),
-  visionView: $("#visionView"), deepSeekApiKey: $("#deepSeekApiKey"), deepSeekKeyStatus: $("#deepSeekKeyStatus"),
-  scheduleImage: $("#scheduleImage"), scheduleImagePreview: $("#scheduleImagePreview"),
-  recognizeScheduleImage: $("#recognizeScheduleImage"), visionStatus: $("#visionStatus"),
-  visionResultCard: $("#visionResultCard"), visionResults: $("#visionResults"),
+  notificationView: $("#notificationView"), notificationEnabled: $("#notificationEnabled"),
+  notificationLeadMinutes: $("#notificationLeadMinutes"), notificationShowDetails: $("#notificationShowDetails"),
   mapView: $("#mapView"), campusMapList: $("#campusMapList"), campusMapDialog: $("#campusMapDialog"),
   mapCanvas: $("#mapCanvas"), mapViewerImage: $("#mapViewerImage"),
   usageNoticeDialog: $("#usageNoticeDialog"), startupUpdateDialog: $("#startupUpdateDialog")
@@ -670,19 +665,14 @@ function switchView(view) {
   elements.scheduleView.classList.toggle("hidden", view !== "schedule");
   elements.monthView.classList.toggle("hidden", view !== "month");
   elements.manageView.classList.toggle("hidden", view !== "manage");
-  elements.visionView.classList.toggle("hidden", view !== "vision");
+  elements.notificationView.classList.toggle("hidden", view !== "notification");
   elements.mapView.classList.toggle("hidden", view !== "map");
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   if (view === "month") renderMonthView();
   if (view === "manage") renderManageList();
-  if (view === "vision") refreshDeepSeekKeyStatus();
+  if (view === "notification") refreshNotificationSettings();
   if (view === "map") refreshCampusMaps();
   window.scrollTo({top: 0, behavior: "smooth"});
-}
-
-function setVisionStatus(message, error = false) {
-  elements.visionStatus.textContent = message;
-  elements.visionStatus.classList.toggle("error", error);
 }
 
 function nativeResult(method, ...args) {
@@ -690,143 +680,80 @@ function nativeResult(method, ...args) {
   return JSON.parse(window.CourseAppNative[method](...args));
 }
 
-function refreshDeepSeekKeyStatus() {
+function setPermissionStatus(element, granted, successText, missingText) {
+  element.textContent = granted ? successText : missingText;
+  element.classList.toggle("ok", granted);
+  element.classList.toggle("error", !granted);
+}
+
+function refreshNotificationSettings() {
   if (nativePlatform() !== "Android") return;
   try {
-    const result = nativeResult("hasDeepSeekApiKey");
-    elements.deepSeekKeyStatus.textContent = result.configured ? "已在本机加密保存 API Key" : "尚未配置 API Key";
-    elements.deepSeekKeyStatus.classList.toggle("error", !result.configured);
+    const result = nativeResult("getNotificationSettings");
+    if (!result.ok) throw new Error(result.error || "无法读取提醒设置");
+    elements.notificationEnabled.checked = Boolean(result.enabled);
+    elements.notificationLeadMinutes.value = String(result.leadMinutes);
+    elements.notificationShowDetails.checked = Boolean(result.showDetails);
+    setPermissionStatus($("#notificationPermissionStatus"), result.notificationGranted,
+      "通知权限：已允许", "通知权限：未允许，系统不会显示课程提醒");
+    setPermissionStatus($("#exactAlarmStatus"), result.exactAlarmGranted,
+      "精确闹钟：已允许", "精确闹钟：未允许，将使用可能延迟的普通提醒");
+    $("#openExactAlarmSettings").disabled = Boolean(result.exactAlarmGranted);
   } catch (error) {
-    elements.deepSeekKeyStatus.textContent = error.message;
-    elements.deepSeekKeyStatus.classList.add("error");
+    $("#notificationPermissionStatus").textContent = error.message;
+    $("#notificationPermissionStatus").classList.add("error");
   }
 }
 
-function saveDeepSeekKey() {
+function saveNotificationSettings() {
   try {
-    const key = elements.deepSeekApiKey.value.trim();
-    if (!key) throw new Error("请输入 DeepSeek API Key");
-    const result = nativeResult("saveDeepSeekApiKey", key);
-    if (!result.ok) throw new Error(result.error || "密钥保存失败");
-    elements.deepSeekApiKey.value = "";
-    refreshDeepSeekKeyStatus();
-    showToast("API Key 已加密保存");
+    const result = nativeResult("saveNotificationSettings", elements.notificationEnabled.checked,
+      Number(elements.notificationLeadMinutes.value), elements.notificationShowDetails.checked);
+    if (!result.ok) throw new Error(result.error || "提醒设置保存失败");
+    showToast("课程提醒设置已保存");
+    if (elements.notificationEnabled.checked) nativeResult("requestNotificationPermission");
+    window.setTimeout(refreshNotificationSettings, 300);
   } catch (error) {
-    elements.deepSeekKeyStatus.textContent = error.message;
-    elements.deepSeekKeyStatus.classList.add("error");
+    alert(error.message);
   }
 }
 
-function deleteDeepSeekKey() {
-  if (!confirm("确定删除本机保存的 DeepSeek API Key 吗？")) return;
-  const result = nativeResult("deleteDeepSeekApiKey");
-  if (!result.ok) {
-    elements.deepSeekKeyStatus.textContent = result.error || "删除失败";
-    return;
-  }
-  refreshDeepSeekKeyStatus();
-  showToast("API Key 已删除");
-}
-
-function chooseVisionImage(file) {
-  recognizedSchedule = undefined;
-  elements.visionResultCard.classList.add("hidden");
-  if (!file) return;
-  if (!/^image\/(jpeg|png|gif|webp)$/.test(file.type)) {
-    setVisionStatus("只支持 JPEG、PNG、GIF 或 WebP 图片", true);
-    return;
-  }
-  if (file.size > 12 * 1024 * 1024) {
-    setVisionStatus("图片超过 12 MB，请压缩后重试", true);
-    return;
-  }
-  selectedVisionFile = file;
-  if (visionPreviewUrl) URL.revokeObjectURL(visionPreviewUrl);
-  visionPreviewUrl = URL.createObjectURL(file);
-  elements.scheduleImagePreview.src = visionPreviewUrl;
-  elements.scheduleImagePreview.classList.remove("hidden");
-  elements.recognizeScheduleImage.disabled = false;
-  setVisionStatus(`已选择 ${file.name}，请确认图片清晰后开始识别`);
-}
-
-function recognizeVisionImage() {
-  if (!selectedVisionFile) return;
-  elements.recognizeScheduleImage.disabled = true;
-  setVisionStatus("正在读取并上传图片，识别可能需要几十秒…");
-  const reader = new FileReader();
-  reader.onerror = () => {
-    elements.recognizeScheduleImage.disabled = false;
-    setVisionStatus("无法读取所选图片", true);
-  };
-  reader.onload = () => {
-    try {
-      const result = nativeResult("recognizeSchedule", String(reader.result));
-      if (!result.ok) throw new Error(result.error || "无法开始识别");
-    } catch (error) {
-      elements.recognizeScheduleImage.disabled = false;
-      setVisionStatus(error.message, true);
-    }
-  };
-  reader.readAsDataURL(selectedVisionFile);
-}
-
-window.onNativeVisionResult = function (payload) {
-  elements.recognizeScheduleImage.disabled = false;
+function requestNotificationPermission() {
   try {
-    const result = JSON.parse(payload);
-    if (!result.ok) throw new Error(result.error || "识别失败");
-    recognizedSchedule = result.schedule;
-    const sessions = Array.isArray(recognizedSchedule.sessions) ? recognizedSchedule.sessions : [];
-    if (!sessions.length) throw new Error("图片中没有识别到课程安排");
-    elements.visionResults.innerHTML = [
-      `<div><strong>识别到 ${sessions.length} 条课程安排</strong></div>`,
-      ...sessions.slice(0, 12).map((item) => `<div class="vision-result-item"><strong>${escapeHtml(item.name || "未命名课程")}</strong><br>${escapeHtml(DAY_NAMES[Number(item.day) - 1] || "星期未知")} · 第${Number(item.periodStart) || "?"}–${Number(item.periodEnd) || "?"}节 · ${escapeHtml(item.location || "地点未识别")}</div>`),
-      sessions.length > 12 ? `<div>另有 ${sessions.length - 12} 条，请导入后继续核对。</div>` : ""
-    ].join("");
-    elements.visionResultCard.classList.remove("hidden");
-    setVisionStatus("识别完成，请仔细核对下方结果");
+    const result = nativeResult("requestNotificationPermission");
+    if (!result.ok) throw new Error(result.error || "无法申请通知权限");
+    if (result.openedSettings) showToast("请在系统设置中允许通知");
+    else if (!result.requested) showToast("系统通知权限已经允许");
   } catch (error) {
-    recognizedSchedule = undefined;
-    elements.visionResultCard.classList.add("hidden");
-    setVisionStatus(error.message, true);
-  }
-};
-
-async function importVisionSchedule() {
-  try {
-    if (!recognizedSchedule?.sessions?.length) throw new Error("没有可导入的识别结果");
-    const inferredWeeks = recognizedSchedule.sessions.flatMap((item) => Array.isArray(item.weeks) ? item.weeks : []);
-    const totalWeeks = Math.max(1, Math.min(30, Number(recognizedSchedule.totalWeeks) || Math.max(0, ...inferredWeeks) || state.semester.totalWeeks));
-    const sessions = recognizedSchedule.sessions.map((item, index) => {
-      const day = Number(item.day), periodStart = Number(item.periodStart), periodEnd = Number(item.periodEnd);
-      const weeks = [...new Set((Array.isArray(item.weeks) ? item.weeks : []).map(Number).filter((week) => week >= 1 && week <= totalWeeks))].sort((a, b) => a - b);
-      if (!String(item.name || "").trim() || day < 1 || day > 7 || periodStart < 1 || periodEnd < periodStart || !weeks.length) {
-        throw new Error(`第 ${index + 1} 条课程缺少名称、星期、节次或周次，请重新识别`);
-      }
-      return {
-        id: `vision-${Date.now()}-${index}`, name: String(item.name).trim(), code: String(item.code || "").trim(),
-        teacher: String(item.teacher || "").trim(), day, periodStart, periodEnd, weeks, weekLabel: formatWeeks(weeks),
-        location: String(item.location || "").trim(), campus: String(item.campus || "").trim(),
-        notes: String(item.notes || "图片识别导入，需人工核对").trim(), color: DEFAULT_COLOR
-      };
-    });
-    if (!confirm(`将用识别到的 ${sessions.length} 条安排替换当前课程。第一教学周基准日仍为 ${state.semester.weekOneStart}，实际开课日期仍为 ${state.semester.classStartDate}。是否继续？`)) return;
-    const previous = state;
-    state = {
-      ...state,
-      semester: {...state.semester, name: String(recognizedSchedule.title || state.semester.name), totalWeeks},
-      periods: Array.isArray(recognizedSchedule.periods) && recognizedSchedule.periods.length ? recognizedSchedule.periods : state.periods,
-      sessions
-    };
-    try { await saveState(`已导入 ${sessions.length} 条识别结果`); } catch (error) { state = previous; throw error; }
-    elements.weekSelect.innerHTML = "";
-    selectedWeek = teachingPosition().week;
-    render();
-    switchView("manage");
-  } catch (error) {
-    setVisionStatus(error.message, true);
+    alert(error.message);
   }
 }
+
+function openExactAlarmSettings() {
+  const result = nativeResult("openExactAlarmSettings");
+  if (!result.ok) alert(result.error || "无法打开精确闹钟设置");
+}
+
+function sendTestNotification() {
+  const result = nativeResult("sendTestNotification");
+  if (!result.ok) return alert(result.error || "测试通知发送失败");
+  showToast("测试通知已发送");
+}
+
+function openCourseDateFromNotification(value) {
+  if (!state || !/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return;
+  const date = parseLocalDate(value);
+  const difference = Math.floor((date - parseLocalDate(state.semester.weekOneStart)) / 86400000);
+  const week = Math.floor(difference / 7) + 1;
+  if (week < 1 || week > state.semester.totalWeeks) return;
+  selectedWeek = week;
+  selectedDay = date.getDay() === 0 ? 7 : date.getDay();
+  render();
+  switchView("schedule");
+}
+
+window.onNativeNotificationSettingsChanged = refreshNotificationSettings;
+window.onNativeNotificationOpen = openCourseDateFromNotification;
 
 async function showInfo() {
   elements.infoDialog.showModal();
@@ -999,12 +926,10 @@ function bindEvents() {
   $("#importExcel").addEventListener("click", () => elements.excelFile.click());
   elements.excelFile.addEventListener("change", () => importExcel(elements.excelFile.files[0]));
   $("#saveTeachingDates").addEventListener("click", saveTeachingDates);
-  $("#saveDeepSeekKey").addEventListener("click", saveDeepSeekKey);
-  $("#deleteDeepSeekKey").addEventListener("click", deleteDeepSeekKey);
-  $("#chooseScheduleImage").addEventListener("click", () => elements.scheduleImage.click());
-  elements.scheduleImage.addEventListener("change", () => chooseVisionImage(elements.scheduleImage.files[0]));
-  elements.recognizeScheduleImage.addEventListener("click", recognizeVisionImage);
-  $("#importVisionResult").addEventListener("click", importVisionSchedule);
+  $("#saveNotificationSettings").addEventListener("click", saveNotificationSettings);
+  $("#requestNotificationPermission").addEventListener("click", requestNotificationPermission);
+  $("#openExactAlarmSettings").addEventListener("click", openExactAlarmSettings);
+  $("#sendTestNotification").addEventListener("click", sendTestNotification);
   $("#importMapImage").addEventListener("click", () => pickCampusMap("image"));
   $("#importMapPdf").addEventListener("click", () => pickCampusMap("pdf"));
   $("#closeCampusMap").addEventListener("click", () => elements.campusMapDialog.close());
@@ -1096,7 +1021,7 @@ async function initialize() {
   selectedWeek = position.week;
   selectedDay = position.day;
   bindEvents();
-  if (nativePlatform() === "Android" && window.CourseAppNative?.recognizeSchedule) {
+  if (nativePlatform() === "Android" && window.CourseAppNative?.listCampusMaps) {
     document.querySelectorAll(".android-only").forEach((item) => item.classList.remove("hidden"));
     refreshCampusMaps();
   }
@@ -1104,6 +1029,7 @@ async function initialize() {
   refreshSystemClock();
   setInterval(refreshSystemClock, 1000);
   window.__courseAppReady = true;
+  if (window.CourseAppNative?.getLaunchCourseDate) openCourseDateFromNotification(window.CourseAppNative.getLaunchCourseDate());
   runStartupPrompts();
   if (!window.CourseAppNative && "serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
 }

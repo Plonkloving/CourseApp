@@ -84,6 +84,7 @@ main { padding-bottom: calc(86px + var(--safe-bottom)); }
 .nav-item.active { color: var(--navy); }
 .manage-view { padding: 22px 0; }
 .vision-view { padding: 22px 0; }
+.map-view { padding: 22px 0; }
 .manage-heading { display: flex; justify-content: space-between; align-items: center; padding: 0 20px; }
 .manage-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .manage-note { margin: 10px 20px 18px; color: var(--muted); font-size: 13px; line-height: 1.55; }
@@ -103,6 +104,20 @@ main { padding-bottom: calc(86px + var(--safe-bottom)); }
 .vision-results { display: grid; gap: 8px; color: #53656f; font-size: 13px; line-height: 1.5; }
 .vision-result-item { padding: 10px 12px; border-radius: 12px; background: #f3f6f5; }
 .vision-result-item strong { color: var(--ink); }
+.map-import-card { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 16px 18px; padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: #fff; }
+.map-import-actions, .map-import-card small { grid-column: 1 / -1; }
+.map-import-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.map-import-card small { color: var(--muted); line-height: 1.5; }
+.map-list { display: grid; gap: 12px; padding: 0 16px; }
+.map-list-item { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: #fff; }
+.map-thumbnail { width: 72px; height: 88px; object-fit: cover; background: #edf1f0; }
+.map-list-content { min-width: 0; padding: 12px 12px 12px 0; }
+.map-list-content h3 { overflow: hidden; margin: 0 0 5px; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.map-list-content p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+.map-list-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.map-list-actions button { padding: 0; border: 0; background: transparent; color: var(--navy); font-size: 12px; font-weight: 800; }
+.map-list-actions .delete-map { color: #a53d31; }
+.map-link-button { margin-left: 6px; padding: 0; border: 0; background: transparent; color: var(--navy); font-size: 12px; font-weight: 800; }
 .manage-item { display: flex; justify-content: space-between; gap: 14px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 17px; background: #fff; cursor: pointer; }
 .manage-item h3 { margin: 0 0 5px; font-size: 15px; }
 .manage-item p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
@@ -113,6 +128,13 @@ main { padding-bottom: calc(86px + var(--safe-bottom)); }
 .secondary-button { border: 1px solid var(--line); background: white; color: var(--ink); }
 .danger-button { border: 0; background: #f7e5e2; color: #a53d31; }
 .sheet-dialog, .info-dialog { width: min(calc(100% - 24px), 620px); max-height: min(88vh, 760px); margin: auto auto 10px; padding: 0; border: 0; border-radius: 24px; background: var(--paper); color: var(--ink); box-shadow: 0 24px 70px rgba(12,31,43,.25); }
+.map-dialog { width: 100%; max-width: 720px; height: 100%; max-height: 100%; margin: 0 auto; padding: max(14px, env(safe-area-inset-top)) 14px calc(14px + var(--safe-bottom)); border: 0; background: #10191f; color: white; }
+.map-dialog::backdrop { background: #10191f; }
+.map-dialog-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.map-dialog-head h2 { margin: 3px 0 0; font-size: 20px; }
+.map-canvas { position: relative; overflow: hidden; height: calc(100% - 112px); margin-top: 12px; border-radius: 16px; background: #26333b; touch-action: none; }
+.map-canvas img { position: absolute; top: 50%; left: 50%; max-width: none; max-height: none; transform-origin: center; user-select: none; }
+.map-viewer-actions { display: flex; justify-content: center; gap: 8px; padding-top: 10px; }
 .info-dialog { margin: auto; max-width: 500px; padding: 20px; }
 .sheet-dialog::backdrop, .info-dialog::backdrop { background: rgba(13,31,43,.5); backdrop-filter: blur(4px); }
 .sheet-dialog form { padding: 20px; }
@@ -156,4 +178,6 @@ main { padding-bottom: calc(86px + var(--safe-bottom)); }
   .field.span-2 { grid-column: span 1; }
   .dialog-actions { flex-wrap: wrap; }
   .sheet-dialog { max-height: 94vh; }
+  .map-import-card { grid-template-columns: 1fr; }
+  .map-import-actions, .map-import-card small { grid-column: 1; }
 }

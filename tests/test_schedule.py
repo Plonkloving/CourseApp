@@ -77,6 +77,24 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("FileChooserParams.parseResult", activity)
         self.assertIn("setAllowContentAccess(true)", activity)
 
+    def test_android_supports_private_campus_maps_and_pdf_crop(self):
+        activity = (ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "local" / "courseschedule" / "MainActivity.java").read_text(encoding="utf-8")
+        pdf_editor = (ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "local" / "courseschedule" / "PdfMapImportActivity.java").read_text(encoding="utf-8")
+        manifest = (ROOT / "android" / "app" / "src" / "main" / "AndroidManifest.xml").read_text(encoding="utf-8")
+        html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('id="mapView"', html)
+        self.assertIn('name="campusMapId"', html)
+        self.assertIn("ACTION_OPEN_DOCUMENT", activity)
+        self.assertIn('new File(context.getFilesDir(), "campus_maps")', activity)
+        self.assertIn("MAX_MAP_BYTES", activity)
+        self.assertIn("PdfRenderer", pdf_editor)
+        self.assertIn("createCroppedBitmap", pdf_editor)
+        self.assertIn('android:name=".PdfMapImportActivity"', manifest)
+        self.assertIn("window.onNativeCampusMapImported", script)
+        self.assertIn("session.campusMapId", script)
+        self.assertNotIn("recognizeSchedule", pdf_editor)
+
     def test_android_has_signed_release_update_flow(self):
         activity = (ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "local" / "courseschedule" / "MainActivity.java").read_text(encoding="utf-8")
         manifest = (ROOT / "android" / "app" / "src" / "main" / "AndroidManifest.xml").read_text(encoding="utf-8")

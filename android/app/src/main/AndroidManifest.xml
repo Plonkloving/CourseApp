@@ -20,6 +20,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".PdfMapImportActivity"
+            android:exported="false" />
         <provider
             android:name=".UpdateFileProvider"
             android:authorities="${applicationId}.updates"

@@ -129,12 +129,33 @@
             <small>AI 可能误识别周次、节次或地点。导入后请逐项核对；教学周基准日和实际开课日期沿用“课程管理”中的本机设置。</small>
           </div>
         </section>
+
+        <section class="map-view hidden" id="mapView">
+          <div class="manage-heading">
+            <div>
+              <p class="eyebrow">Android · 仅保存在本机</p>
+              <h2>校区地图</h2>
+            </div>
+          </div>
+          <p class="manage-note">可导入地图图片，或从学校通知 PDF 中选择页面并裁剪地图区域。文件只保存在应用私有目录，不会上传。</p>
+          <div class="map-import-card">
+            <label class="field">地图名称<input id="campusMapName" maxlength="80" placeholder="如 主校区总览" /></label>
+            <label class="field">所属校区<input id="campusMapCampus" maxlength="80" placeholder="如 主校区" /></label>
+            <div class="map-import-actions">
+              <button class="secondary-button" id="importMapImage" type="button">导入地图图片</button>
+              <button class="primary-button" id="importMapPdf" type="button">从 PDF 提取</button>
+            </div>
+            <small>支持 JPEG、PNG、WebP 和 PDF，单个文件不超过 20 MB。PDF 每次提取一个页面或裁剪区域。</small>
+          </div>
+          <div class="map-list" id="campusMapList"></div>
+        </section>
       </main>
 
       <nav class="bottom-nav" aria-label="主导航">
         <button class="nav-item active" data-view="schedule"><span>▦</span>周课表</button>
         <button class="nav-item" data-view="month"><span>▦</span>月课表</button>
         <button class="nav-item" data-view="manage"><span>✎</span>课程管理</button>
+        <button class="nav-item android-only hidden" data-view="map"><span>⌖</span>校区地图</button>
         <button class="nav-item android-only hidden" data-view="vision"><span>▣</span>图片识别</button>
       </nav>
     </div>
@@ -164,6 +185,9 @@
           <label class="field">结束节次<input name="periodEnd" required type="number" min="1" max="13" /></label>
           <label class="field span-2">上课地点<input name="location" required maxlength="100" /></label>
           <label class="field span-2">校区<input name="campus" maxlength="100" /></label>
+          <label class="field span-2">关联校区地图
+            <select name="campusMapId"><option value="">不关联地图</option></select>
+          </label>
           <label class="field span-2">备注<textarea name="notes" rows="2" maxlength="200"></textarea></label>
         </div>
         <p class="form-error" id="formError" role="alert"></p>
@@ -174,6 +198,21 @@
           <button class="primary-button" type="submit">保存</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="campusMapDialog" class="map-dialog">
+      <div class="map-dialog-head">
+        <div><p class="eyebrow" id="mapViewerCampus"></p><h2 id="mapViewerTitle">校区地图</h2></div>
+        <button class="icon-button close-button" type="button" id="closeCampusMap" aria-label="关闭">×</button>
+      </div>
+      <div class="map-canvas" id="mapCanvas">
+        <img id="mapViewerImage" alt="校区地图" draggable="false" />
+      </div>
+      <div class="map-viewer-actions">
+        <button class="secondary-button compact" id="mapZoomOut" type="button">缩小</button>
+        <button class="secondary-button compact" id="mapReset" type="button">复位</button>
+        <button class="secondary-button compact" id="mapZoomIn" type="button">放大</button>
+      </div>
     </dialog>
 
     <dialog id="dayScheduleDialog" class="sheet-dialog day-schedule-dialog">

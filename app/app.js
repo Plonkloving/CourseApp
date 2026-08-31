@@ -13,6 +13,13 @@ let availableUpdateUrl = "";
 let selectedVisionFile;
 let recognizedSchedule;
 let visionPreviewUrl = "";
+let campusMaps = [];
+let mapScale = 1;
+let mapBaseScale = 1;
+let mapTranslateX = 0;
+let mapTranslateY = 0;
+const mapPointers = new Map();
+let mapGesture;
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -29,7 +36,9 @@ const elements = {
   visionView: $("#visionView"), deepSeekApiKey: $("#deepSeekApiKey"), deepSeekKeyStatus: $("#deepSeekKeyStatus"),
   scheduleImage: $("#scheduleImage"), scheduleImagePreview: $("#scheduleImagePreview"),
   recognizeScheduleImage: $("#recognizeScheduleImage"), visionStatus: $("#visionStatus"),
-  visionResultCard: $("#visionResultCard"), visionResults: $("#visionResults")
+  visionResultCard: $("#visionResultCard"), visionResults: $("#visionResults"),
+  mapView: $("#mapView"), campusMapList: $("#campusMapList"), campusMapDialog: $("#campusMapDialog"),
+  mapCanvas: $("#mapCanvas"), mapViewerImage: $("#mapViewerImage")
 };
 
 function parseLocalDate(value) {
@@ -228,13 +237,14 @@ function liveStatus(session, courseDate = dateFor(selectedWeek, selectedDay)) {
 
 function courseCard(session, courseDate = dateFor(selectedWeek, selectedDay), editable = true) {
   const status = liveStatus(session, courseDate);
+  const linkedMap = campusMaps.find((item) => item.id === session.campusMapId);
   return `<article class="course-card" style="--course-color:${escapeHtml(session.color || DEFAULT_COLOR)}">
     <div class="course-accent"></div>
     <div class="course-content">
       <div class="course-topline"><span class="course-code">${escapeHtml(session.code || "自定义课程")}</span>${status ? `<span class="status-pill">${status}</span>` : ""}</div>
       <h3>${escapeHtml(session.name)}</h3>
       <div class="detail-row"><span class="detail-icon">◷</span><span>${periodTime(session)} · 第${session.periodStart}–${session.periodEnd}节</span></div>
-      <div class="detail-row"><span class="detail-icon">⌖</span><span>${escapeHtml(session.location)}${session.campus ? `<br>${escapeHtml(session.campus)}` : ""}</span></div>
+      <div class="detail-row"><span class="detail-icon">⌖</span><span>${escapeHtml(session.location)}${session.campus ? `<br>${escapeHtml(session.campus)}` : ""}${linkedMap ? `<button class="map-link-button open-campus-map" type="button" data-map-id="${escapeHtml(linkedMap.id)}">查看地图</button>` : ""}</span></div>
       ${session.teacher ? `<div class="detail-row"><span class="detail-icon">人</span><span>${escapeHtml(session.teacher)}</span></div>` : ""}
       ${editable ? `<div class="card-actions"><button class="text-button edit-course" data-id="${escapeHtml(session.id)}">修改此安排 →</button></div>` : ""}
     </div>
@@ -343,11 +353,13 @@ function openEditor(id = "") {
   elements.deleteCourse.classList.toggle("hidden", !session);
   const values = session || {
     id: "", name: "", code: "", teacher: "", day: selectedDay, weeks: [selectedWeek],
-    periodStart: 1, periodEnd: 2, location: "", campus: state.semester.campus, notes: ""
+    periodStart: 1, periodEnd: 2, location: "", campus: state.semester.campus, campusMapId: "", notes: ""
   };
   for (const name of ["id", "name", "code", "teacher", "day", "periodStart", "periodEnd", "location", "campus", "notes"]) {
     form.elements[name].value = values[name] ?? "";
   }
+  form.elements.campusMapId.innerHTML = `<option value="">不关联地图</option>${campusMaps.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.campus ? `${item.campus} · ${item.name}` : item.name)}</option>`).join("")}`;
+  form.elements.campusMapId.value = values.campusMapId || "";
   form.elements.weeksText.value = session?.weekLabel || formatWeeks(values.weeks).replace(/[第周]/g, "").replace("–", "-");
   elements.courseDialog.showModal();
 }
@@ -385,6 +397,7 @@ async function submitCourse(event) {
       teacher: String(form.get("teacher")).trim(), day: Number(form.get("day")),
       periodStart, periodEnd, weeks, weekLabel: weeksText.trim(),
       location: String(form.get("location")).trim(), campus: String(form.get("campus")).trim(),
+      campusMapId: String(form.get("campusMapId") || ""),
       notes: String(form.get("notes")).trim(), color: previous?.color || DEFAULT_COLOR
     };
     if (previous) state.sessions = state.sessions.map((item) => item.id === existingId ? session : item);
@@ -534,16 +547,129 @@ function showToast(message) {
   toastTimer = setTimeout(() => elements.toast.classList.remove("show"), 2300);
 }
 
+function mapUrl(id) {
+  return `https://courseapp.local/maps/${encodeURIComponent(id)}`;
+}
+
+function refreshCampusMaps() {
+  if (nativePlatform() !== "Android" || !window.CourseAppNative?.listCampusMaps) return;
+  try {
+    const result = nativeResult("listCampusMaps");
+    if (!result.ok) throw new Error(result.error || "地图读取失败");
+    campusMaps = Array.isArray(result.maps) ? result.maps : [];
+    renderCampusMaps();
+  } catch (error) {
+    elements.campusMapList.innerHTML = `<div class="empty-state"><strong>无法读取地图</strong><span>${escapeHtml(error.message)}</span></div>`;
+  }
+}
+
+function renderCampusMaps() {
+  elements.campusMapList.innerHTML = campusMaps.length ? campusMaps.map((item) => `<article class="map-list-item">
+    <img class="map-thumbnail" src="${mapUrl(item.id)}" alt="" />
+    <div class="map-list-content">
+      <h3>${escapeHtml(item.name)}</h3>
+      <p>${escapeHtml(item.campus || "未填写校区")}${item.source === "pdf" ? " · PDF 提取" : " · 本地图片"}</p>
+      <div class="map-list-actions">
+        <button class="open-campus-map" type="button" data-map-id="${escapeHtml(item.id)}">查看</button>
+        <button class="rename-campus-map" type="button" data-map-id="${escapeHtml(item.id)}">重命名</button>
+        <button class="delete-map delete-campus-map" type="button" data-map-id="${escapeHtml(item.id)}">删除</button>
+      </div>
+    </div>
+  </article>`).join("") : '<div class="empty-state"><strong>还没有校区地图</strong><span>可以导入图片，或从学校通知 PDF 中提取。</span></div>';
+}
+
+function pickCampusMap(kind) {
+  try {
+    const name = $("#campusMapName").value.trim();
+    const campus = $("#campusMapCampus").value.trim();
+    const result = nativeResult("pickCampusMap", kind, name, campus);
+    if (!result.ok) throw new Error(result.error || "无法打开文件选择器");
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+window.onNativeCampusMapImported = function (payload) {
+  const result = JSON.parse(payload);
+  if (!result.ok) {
+    alert(`地图导入失败：${result.error || "未知错误"}`);
+    return;
+  }
+  $("#campusMapName").value = "";
+  refreshCampusMaps();
+  showToast("校区地图已保存在本机");
+};
+
+function openCampusMap(id) {
+  const item = campusMaps.find((map) => map.id === id);
+  if (!item) return;
+  $("#mapViewerTitle").textContent = item.name;
+  $("#mapViewerCampus").textContent = item.campus || "校区地图";
+  elements.mapViewerImage.src = `${mapUrl(item.id)}?v=${encodeURIComponent(item.updatedAt || "")}`;
+  elements.campusMapDialog.showModal();
+}
+
+function renderMapTransform() {
+  const totalScale = mapBaseScale * mapScale;
+  elements.mapViewerImage.style.transform = `translate(-50%, -50%) translate(${mapTranslateX}px, ${mapTranslateY}px) scale(${totalScale})`;
+}
+
+function resetMapViewer() {
+  const image = elements.mapViewerImage;
+  const canvas = elements.mapCanvas;
+  if (!image.naturalWidth || !image.naturalHeight) return;
+  mapBaseScale = Math.min(canvas.clientWidth / image.naturalWidth, canvas.clientHeight / image.naturalHeight);
+  mapScale = 1;
+  mapTranslateX = 0;
+  mapTranslateY = 0;
+  renderMapTransform();
+}
+
+function zoomMap(multiplier) {
+  mapScale = Math.max(1, Math.min(6, mapScale * multiplier));
+  if (mapScale === 1) {
+    mapTranslateX = 0;
+    mapTranslateY = 0;
+  }
+  renderMapTransform();
+}
+
+function renameCampusMap(id) {
+  const item = campusMaps.find((map) => map.id === id);
+  if (!item) return;
+  const name = prompt("地图名称", item.name);
+  if (name === null || !name.trim()) return;
+  const campus = prompt("所属校区", item.campus || "");
+  if (campus === null) return;
+  const result = nativeResult("updateCampusMap", id, name.trim(), campus.trim());
+  if (!result.ok) return alert(result.error || "地图更新失败");
+  refreshCampusMaps();
+  render();
+}
+
+async function deleteCampusMap(id) {
+  const item = campusMaps.find((map) => map.id === id);
+  if (!item || !confirm(`确定删除地图“${item.name}”吗？关联课程将保留地点文字，但不再显示地图入口。`)) return;
+  const result = nativeResult("deleteCampusMap", id);
+  if (!result.ok) return alert(result.error || "地图删除失败");
+  state.sessions = state.sessions.map((session) => session.campusMapId === id ? {...session, campusMapId: ""} : session);
+  await saveState("校区地图已删除");
+  refreshCampusMaps();
+  render();
+}
+
 function switchView(view) {
   activeView = view;
   elements.scheduleView.classList.toggle("hidden", view !== "schedule");
   elements.monthView.classList.toggle("hidden", view !== "month");
   elements.manageView.classList.toggle("hidden", view !== "manage");
   elements.visionView.classList.toggle("hidden", view !== "vision");
+  elements.mapView.classList.toggle("hidden", view !== "map");
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   if (view === "month") renderMonthView();
   if (view === "manage") renderManageList();
   if (view === "vision") refreshDeepSeekKeyStatus();
+  if (view === "map") refreshCampusMaps();
   window.scrollTo({top: 0, behavior: "smooth"});
 }
 
@@ -814,6 +940,12 @@ function bindEvents() {
   document.body.addEventListener("click", (event) => {
     const editor = event.target.closest(".edit-course");
     if (editor) openEditor(editor.dataset.id);
+    const mapOpener = event.target.closest(".open-campus-map");
+    if (mapOpener) openCampusMap(mapOpener.dataset.mapId);
+    const mapRenamer = event.target.closest(".rename-campus-map");
+    if (mapRenamer) renameCampusMap(mapRenamer.dataset.mapId);
+    const mapDeleter = event.target.closest(".delete-campus-map");
+    if (mapDeleter) deleteCampusMap(mapDeleter.dataset.mapId);
   });
   document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   $("#addCourse").addEventListener("click", () => openEditor());
@@ -826,6 +958,44 @@ function bindEvents() {
   elements.scheduleImage.addEventListener("change", () => chooseVisionImage(elements.scheduleImage.files[0]));
   elements.recognizeScheduleImage.addEventListener("click", recognizeVisionImage);
   $("#importVisionResult").addEventListener("click", importVisionSchedule);
+  $("#importMapImage").addEventListener("click", () => pickCampusMap("image"));
+  $("#importMapPdf").addEventListener("click", () => pickCampusMap("pdf"));
+  $("#closeCampusMap").addEventListener("click", () => elements.campusMapDialog.close());
+  $("#mapZoomOut").addEventListener("click", () => zoomMap(0.8));
+  $("#mapZoomIn").addEventListener("click", () => zoomMap(1.25));
+  $("#mapReset").addEventListener("click", resetMapViewer);
+  elements.mapViewerImage.addEventListener("load", resetMapViewer);
+  elements.mapCanvas.addEventListener("pointerdown", (event) => {
+    elements.mapCanvas.setPointerCapture(event.pointerId);
+    mapPointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
+    if (mapPointers.size === 1) mapGesture = {x: event.clientX, y: event.clientY, translateX: mapTranslateX, translateY: mapTranslateY};
+    if (mapPointers.size === 2) {
+      const [first, second] = [...mapPointers.values()];
+      mapGesture = {distance: Math.hypot(second.x - first.x, second.y - first.y), scale: mapScale};
+    }
+  });
+  elements.mapCanvas.addEventListener("pointermove", (event) => {
+    if (!mapPointers.has(event.pointerId)) return;
+    mapPointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
+    if (mapPointers.size === 1 && mapScale > 1 && mapGesture?.translateX !== undefined) {
+      mapTranslateX = mapGesture.translateX + event.clientX - mapGesture.x;
+      mapTranslateY = mapGesture.translateY + event.clientY - mapGesture.y;
+      renderMapTransform();
+    } else if (mapPointers.size === 2 && mapGesture?.distance) {
+      const [first, second] = [...mapPointers.values()];
+      mapScale = Math.max(1, Math.min(6, mapGesture.scale * Math.hypot(second.x - first.x, second.y - first.y) / mapGesture.distance));
+      renderMapTransform();
+    }
+  });
+  const endMapPointer = (event) => {
+    mapPointers.delete(event.pointerId);
+    if (mapPointers.size === 1) {
+      const point = [...mapPointers.values()][0];
+      mapGesture = {x: point.x, y: point.y, translateX: mapTranslateX, translateY: mapTranslateY};
+    } else if (!mapPointers.size) mapGesture = undefined;
+  };
+  elements.mapCanvas.addEventListener("pointerup", endMapPointer);
+  elements.mapCanvas.addEventListener("pointercancel", endMapPointer);
   $("#closeDialog").addEventListener("click", () => elements.courseDialog.close());
   $("#cancelDialog").addEventListener("click", () => elements.courseDialog.close());
   $("#closeDaySchedule").addEventListener("click", () => elements.dayScheduleDialog.close());
@@ -870,6 +1040,7 @@ async function initialize() {
   bindEvents();
   if (nativePlatform() === "Android" && window.CourseAppNative?.recognizeSchedule) {
     document.querySelectorAll(".android-only").forEach((item) => item.classList.remove("hidden"));
+    refreshCampusMaps();
   }
   render();
   refreshSystemClock();

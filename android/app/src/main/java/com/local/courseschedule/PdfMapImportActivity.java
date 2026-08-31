@@ -8,6 +8,7 @@ import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.Typeface;
 import android.graphics.pdf.PdfRenderer;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
@@ -63,7 +64,7 @@ public class PdfMapImportActivity extends Activity {
         title.setText("从 PDF 提取校区地图");
         title.setTextColor(Color.rgb(24, 48, 65));
         title.setTextSize(21);
-        title.setTypeface(null, 1);
+        title.setTypeface(null, Typeface.BOLD);
         root.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView note = new TextView(this);

@@ -63,6 +63,18 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("courseCard(session, date, false)", script)
         self.assertIn("repeat(7, minmax(0, 1fr))", styles)
 
+    def test_liquid_glass_theme_has_accessible_fallbacks(self):
+        styles = (ROOT / "app" / "styles.css").read_text(encoding="utf-8")
+        html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        service_worker = (ROOT / "app" / "sw.js").read_text(encoding="utf-8")
+        self.assertIn("--glass-blur", styles)
+        self.assertIn("backdrop-filter: blur", styles)
+        self.assertIn("@supports not", styles)
+        self.assertIn("prefers-color-scheme: dark", styles)
+        self.assertIn("prefers-reduced-motion: reduce", styles)
+        self.assertIn('name="theme-color" content="#243F7A"', html)
+        self.assertIn('CACHE_NAME = "course-app-v7"', service_worker)
+
     def test_android_asset_entry_uses_classic_script(self):
         html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
         self.assertIn('<script src="./app.js" defer></script>', html)

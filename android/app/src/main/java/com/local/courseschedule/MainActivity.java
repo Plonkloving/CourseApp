@@ -7,17 +7,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
-import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.provider.OpenableColumns;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
-import android.webkit.WebResourceResponse;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -30,32 +26,23 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
-import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
-import java.util.Collections;
 import java.util.Locale;
-import java.util.UUID;
 
 
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 1001;
-    private static final int MAP_PICKER_REQUEST = 1002;
-    private static final int PDF_MAP_EDITOR_REQUEST = 1003;
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1004;
     private WebView webView;
     private NativeBridge nativeBridge;
     private ValueCallback<Uri[]> fileChooserCallback;
     private File pendingUpdate;
-    private String pendingMapName = "";
-    private String pendingMapCampus = "";
-    private String pendingMapKind = "";
     private String pendingCourseDate = "";
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -64,6 +51,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         pendingCourseDate = getIntent().getStringExtra("courseDate");
         removeLegacyVisionSecrets(this);
+        removeCampusMapData(this);
         CourseNotificationScheduler.createChannel(this);
         getWindow().setStatusBarColor(Color.rgb(23, 59, 87));
         getWindow().setNavigationBarColor(Color.rgb(251, 250, 247));
@@ -105,25 +93,6 @@ public class MainActivity extends Activity {
                 String url = request.getUrl().toString();
                 return !url.startsWith("file:///android_asset/");
             }
-
-            @Override
-            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                Uri uri = request.getUrl();
-                if ("courseapp.local".equals(uri.getHost()) && uri.getPathSegments().size() == 2
-                        && "maps".equals(uri.getPathSegments().get(0))) {
-                    try {
-                        File file = nativeBridge.campusMapFile(uri.getPathSegments().get(1));
-                        if (file != null) {
-                            WebResourceResponse response = new WebResourceResponse(nativeBridge.campusMapMime(uri.getPathSegments().get(1)), null, new FileInputStream(file));
-                            response.setResponseHeaders(Collections.singletonMap("Cache-Control", "no-store"));
-                            return response;
-                        }
-                    } catch (Exception ignored) {
-                    }
-                    return new WebResourceResponse("text/plain", "utf-8", 404, "Not found", Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
-                }
-                return super.shouldInterceptRequest(view, request);
-            }
         });
         setContentView(webView);
         webView.loadUrl("file:///android_asset/index.html");
@@ -148,38 +117,6 @@ public class MainActivity extends Activity {
             Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
             fileChooserCallback.onReceiveValue(result);
             fileChooserCallback = null;
-            return;
-        }
-        if (requestCode == MAP_PICKER_REQUEST) {
-            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-                return;
-            }
-            Uri uri = data.getData();
-            if ("pdf".equals(pendingMapKind)) {
-                Intent editor = new Intent(this, PdfMapImportActivity.class);
-                editor.setData(uri);
-                editor.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                editor.putExtra("mapName", pendingMapName);
-                editor.putExtra("campus", pendingMapCampus);
-                startActivityForResult(editor, PDF_MAP_EDITOR_REQUEST);
-            } else {
-                String name = pendingMapName;
-                String campus = pendingMapCampus;
-                new Thread(() -> sendCampusMapResult(nativeBridge.importImageMap(uri, name, campus)), "campus-map-image").start();
-            }
-            pendingMapKind = "";
-            pendingMapName = "";
-            pendingMapCampus = "";
-            return;
-        }
-        if (requestCode == PDF_MAP_EDITOR_REQUEST) {
-            if (resultCode != RESULT_OK || data == null) {
-                return;
-            }
-            String path = data.getStringExtra("preparedPath");
-            String name = data.getStringExtra("mapName");
-            String campus = data.getStringExtra("campus");
-            new Thread(() -> sendCampusMapResult(nativeBridge.importPreparedPdfMap(path, name, campus)), "campus-map-pdf").start();
             return;
         }
         super.onActivityResult(requestCode, resultCode, data);
@@ -237,11 +174,6 @@ public class MainActivity extends Activity {
         webView.post(() -> webView.evaluateJavascript(script, null));
     }
 
-    private void sendCampusMapResult(JSONObject result) {
-        String argument = JSONObject.quote(result.toString());
-        webView.post(() -> webView.evaluateJavascript("window.onNativeCampusMapImported(" + argument + ")", null));
-    }
-
     private void sendNotificationSettingsChanged() {
         if (webView != null) webView.post(() -> webView.evaluateJavascript("window.onNativeNotificationSettingsChanged?.()", null));
     }
@@ -267,15 +199,21 @@ public class MainActivity extends Activity {
         if (secretsCleared && keyCleared) preferences.edit().putBoolean("vision_removed_1_4_3", true).commit();
     }
 
-    private void launchCampusMapPicker(String kind, String name, String campus) {
-        pendingMapKind = kind;
-        pendingMapName = name;
-        pendingMapCampus = campus;
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("pdf".equals(kind) ? "application/pdf" : "image/*");
-        if (!"pdf".equals(kind)) intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/jpeg", "image/png", "image/webp"});
-        startActivityForResult(intent, MAP_PICKER_REQUEST);
+    private static void removeCampusMapData(Context context) {
+        SharedPreferences preferences = context.getSharedPreferences("course_schedule", Context.MODE_PRIVATE);
+        if (preferences.getBoolean("maps_removed_1_5_0", false)) return;
+        preferences.edit().remove("campus_maps_json").commit();
+        File mapsDirectory = new File(context.getFilesDir(), "campus_maps");
+        if (mapsDirectory.exists()) deleteRecursively(mapsDirectory);
+        preferences.edit().putBoolean("maps_removed_1_5_0", true).commit();
+    }
+
+    private static void deleteRecursively(File file) {
+        File[] children = file.listFiles();
+        if (children != null) {
+            for (File child : children) deleteRecursively(child);
+        }
+        file.delete();
     }
 
     private void installUpdate(File apk) {
@@ -298,8 +236,6 @@ public class MainActivity extends Activity {
         private static final String PREFERENCES = "course_schedule";
         private static final String STATE_KEY = "state_json";
         private static final String PRIVACY_RESET_KEY = "privacy_reset_1_3";
-        private static final String CAMPUS_MAPS_KEY = "campus_maps_json";
-        private static final long MAX_MAP_BYTES = 20L * 1024L * 1024L;
         private final Context context;
         private final SharedPreferences preferences;
 
@@ -396,232 +332,6 @@ public class MainActivity extends Activity {
             String date = pendingCourseDate == null ? "" : pendingCourseDate;
             pendingCourseDate = "";
             return date;
-        }
-
-        @JavascriptInterface
-        public String pickCampusMap(String kind, String name, String campus) {
-            JSONObject result = new JSONObject();
-            try {
-                if (!("image".equals(kind) || "pdf".equals(kind))) throw new Exception("不支持的地图类型");
-                String safeName = cleanMapText(name, 80);
-                String safeCampus = cleanMapText(campus, 80);
-                webView.post(() -> launchCampusMapPicker(kind, safeName, safeCampus));
-                result.put("ok", true);
-            } catch (Exception error) {
-                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
-            }
-            return result.toString();
-        }
-
-        @JavascriptInterface
-        public synchronized String listCampusMaps() {
-            JSONObject result = new JSONObject();
-            try {
-                JSONArray stored = readCampusMaps();
-                JSONArray available = new JSONArray();
-                JSONArray publicMaps = new JSONArray();
-                for (int index = 0; index < stored.length(); index++) {
-                    JSONObject map = stored.getJSONObject(index);
-                    try {
-                        if (!verifiedMapFile(map.optString("localFile")).isFile()) continue;
-                        available.put(map);
-                        publicMaps.put(new JSONObject().put("id", map.optString("id")).put("name", map.optString("name"))
-                                .put("campus", map.optString("campus")).put("source", map.optString("source"))
-                                .put("updatedAt", map.optLong("updatedAt")));
-                    } catch (Exception ignored) {
-                    }
-                }
-                if (available.length() != stored.length()) writeCampusMaps(available);
-                result.put("ok", true).put("maps", publicMaps);
-            } catch (Exception error) {
-                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
-            }
-            return result.toString();
-        }
-
-        @JavascriptInterface
-        public synchronized String updateCampusMap(String id, String name, String campus) {
-            JSONObject result = new JSONObject();
-            try {
-                JSONArray maps = readCampusMaps();
-                JSONObject map = findCampusMap(maps, id);
-                if (map == null) throw new Exception("地图不存在");
-                String nextName = cleanMapText(name, 80);
-                if (nextName.isEmpty()) throw new Exception("地图名称不能为空");
-                map.put("name", nextName).put("campus", cleanMapText(campus, 80)).put("updatedAt", System.currentTimeMillis());
-                writeCampusMaps(maps);
-                result.put("ok", true);
-            } catch (Exception error) {
-                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
-            }
-            return result.toString();
-        }
-
-        @JavascriptInterface
-        public synchronized String deleteCampusMap(String id) {
-            JSONObject result = new JSONObject();
-            try {
-                JSONArray maps = readCampusMaps();
-                JSONObject map = findCampusMap(maps, id);
-                if (map == null) throw new Exception("地图不存在");
-                File file = verifiedMapFile(map.optString("localFile"));
-                if (file.exists() && !file.delete()) throw new Exception("地图文件删除失败");
-                JSONArray remaining = new JSONArray();
-                for (int index = 0; index < maps.length(); index++) {
-                    JSONObject item = maps.getJSONObject(index);
-                    if (!id.equals(item.optString("id"))) remaining.put(item);
-                }
-                writeCampusMaps(remaining);
-                result.put("ok", true);
-            } catch (Exception error) {
-                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
-            }
-            return result.toString();
-        }
-
-        synchronized JSONObject importImageMap(Uri uri, String requestedName, String campus) {
-            JSONObject result = new JSONObject();
-            File temporary = null;
-            try {
-                String mime = context.getContentResolver().getType(uri);
-                String originalName = displayName(uri);
-                String lowerName = originalName.toLowerCase(Locale.ROOT);
-                String extension;
-                if ("image/jpeg".equals(mime) || lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) { extension = ".jpg"; mime = "image/jpeg"; }
-                else if ("image/png".equals(mime) || lowerName.endsWith(".png")) { extension = ".png"; mime = "image/png"; }
-                else if ("image/webp".equals(mime) || lowerName.endsWith(".webp")) { extension = ".webp"; mime = "image/webp"; }
-                else throw new Exception("只支持 JPEG、PNG 或 WebP 图片");
-                String id = UUID.randomUUID().toString();
-                temporary = new File(mapsDirectory(), id + ".tmp");
-                copyLimited(context.getContentResolver().openInputStream(uri), temporary, MAX_MAP_BYTES);
-                BitmapFactory.Options bounds = new BitmapFactory.Options();
-                bounds.inJustDecodeBounds = true;
-                BitmapFactory.decodeFile(temporary.getAbsolutePath(), bounds);
-                if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outWidth > 30000 || bounds.outHeight > 30000) {
-                    throw new Exception("图片内容无效或尺寸过大");
-                }
-                File target = new File(mapsDirectory(), id + extension);
-                if (!temporary.renameTo(target)) throw new Exception("地图文件保存失败");
-                temporary = null;
-                String fallbackName = originalName.replaceFirst("\\.[^.]+$", "");
-                JSONObject map = addCampusMap(id, target.getName(), cleanMapText(requestedName, 80), fallbackName,
-                        cleanMapText(campus, 80), mime, "image");
-                result.put("ok", true).put("map", map);
-            } catch (Exception error) {
-                if (temporary != null) temporary.delete();
-                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
-            }
-            return result;
-        }
-
-        synchronized JSONObject importPreparedPdfMap(String path, String requestedName, String campus) {
-            JSONObject result = new JSONObject();
-            try {
-                if (path == null) throw new Exception("没有生成地图图片");
-                File source = new File(path).getCanonicalFile();
-                File allowed = new File(context.getCacheDir(), "pdf-map-import").getCanonicalFile();
-                if (!source.getPath().startsWith(allowed.getPath() + File.separator) || !source.isFile()) {
-                    throw new Exception("PDF 地图临时文件无效");
-                }
-                if (source.length() <= 0 || source.length() > MAX_MAP_BYTES) throw new Exception("提取后的地图大小异常");
-                String id = UUID.randomUUID().toString();
-                File target = new File(mapsDirectory(), id + ".png");
-                copyLimited(new FileInputStream(source), target, MAX_MAP_BYTES);
-                source.delete();
-                JSONObject map = addCampusMap(id, target.getName(), cleanMapText(requestedName, 80), "PDF 地图",
-                        cleanMapText(campus, 80), "image/png", "pdf");
-                result.put("ok", true).put("map", map);
-            } catch (Exception error) {
-                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
-            }
-            return result;
-        }
-
-        synchronized File campusMapFile(String id) throws Exception {
-            JSONObject map = findCampusMap(readCampusMaps(), id);
-            if (map == null) return null;
-            File file = verifiedMapFile(map.optString("localFile"));
-            return file.isFile() ? file : null;
-        }
-
-        synchronized String campusMapMime(String id) throws Exception {
-            JSONObject map = findCampusMap(readCampusMaps(), id);
-            return map == null ? "application/octet-stream" : map.optString("mimeType", "application/octet-stream");
-        }
-
-        private JSONObject addCampusMap(String id, String localFile, String requestedName, String fallbackName,
-                                        String campus, String mime, String source) throws Exception {
-            String name = requestedName.isEmpty() ? cleanMapText(fallbackName, 80) : requestedName;
-            if (name.isEmpty()) name = "校区地图";
-            JSONObject map = new JSONObject().put("id", id).put("name", name).put("campus", campus)
-                    .put("localFile", localFile).put("mimeType", mime).put("source", source)
-                    .put("updatedAt", System.currentTimeMillis());
-            JSONArray maps = readCampusMaps();
-            maps.put(map);
-            writeCampusMaps(maps);
-            return map;
-        }
-
-        private JSONArray readCampusMaps() throws Exception {
-            return new JSONArray(preferences.getString(CAMPUS_MAPS_KEY, "[]"));
-        }
-
-        private void writeCampusMaps(JSONArray maps) throws Exception {
-            if (!preferences.edit().putString(CAMPUS_MAPS_KEY, maps.toString()).commit()) throw new Exception("地图信息保存失败");
-        }
-
-        private JSONObject findCampusMap(JSONArray maps, String id) throws Exception {
-            if (id == null || !id.matches("[0-9a-fA-F-]{36}")) return null;
-            for (int index = 0; index < maps.length(); index++) {
-                JSONObject map = maps.getJSONObject(index);
-                if (id.equals(map.optString("id"))) return map;
-            }
-            return null;
-        }
-
-        private File mapsDirectory() throws Exception {
-            File directory = new File(context.getFilesDir(), "campus_maps");
-            if (!directory.exists() && !directory.mkdirs()) throw new Exception("无法创建地图目录");
-            return directory;
-        }
-
-        private File verifiedMapFile(String name) throws Exception {
-            if (name == null || !name.matches("[0-9a-fA-F-]{36}\\.(jpg|png|webp)")) throw new Exception("地图文件名无效");
-            File directory = mapsDirectory().getCanonicalFile();
-            File file = new File(directory, name).getCanonicalFile();
-            if (!file.getParentFile().equals(directory)) throw new Exception("地图路径无效");
-            return file;
-        }
-
-        private void copyLimited(InputStream input, File target, long limit) throws Exception {
-            if (input == null) throw new Exception("无法读取所选文件");
-            try (InputStream source = input; FileOutputStream output = new FileOutputStream(target)) {
-                byte[] buffer = new byte[16384];
-                long total = 0;
-                int count;
-                while ((count = source.read(buffer)) != -1) {
-                    total += count;
-                    if (total > limit) throw new Exception("文件超过 20 MB");
-                    output.write(buffer, 0, count);
-                }
-                if (total == 0) throw new Exception("所选文件为空");
-            } catch (Exception error) {
-                target.delete();
-                throw error;
-            }
-        }
-
-        private String displayName(Uri uri) {
-            try (Cursor cursor = context.getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
-                if (cursor != null && cursor.moveToFirst() && cursor.getString(0) != null) return cursor.getString(0);
-            } catch (Exception ignored) {}
-            return "校区地图";
-        }
-
-        private String cleanMapText(String value, int limit) {
-            if (value == null) return "";
-            String clean = value.replace('\n', ' ').replace('\r', ' ').trim();
-            return clean.length() > limit ? clean.substring(0, limit) : clean;
         }
 
         private String safeMessage(Exception error) {

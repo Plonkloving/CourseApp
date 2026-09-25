@@ -1,7 +1,7 @@
 const DAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"];
 const SHORT_DAYS = ["一", "二", "三", "四", "五", "六", "日"];
 const DEFAULT_COLOR = "#3157A4";
-const USAGE_NOTICE_VERSION = "2";
+const USAGE_NOTICE_VERSION = "3";
 const USAGE_NOTICE_STORAGE_KEY = "course-app-usage-notice";
 const IGNORED_UPDATE_STORAGE_KEY = "course-app-ignored-update";
 
@@ -16,19 +16,14 @@ let availableUpdateUrl = "";
 let availableUpdateVersion = "";
 let updateCheckMode = "manual";
 let resolveNoticeAcceptance;
-let campusMaps = [];
-let mapScale = 1;
-let mapBaseScale = 1;
-let mapTranslateX = 0;
-let mapTranslateY = 0;
-const mapPointers = new Map();
-let mapGesture;
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
   semesterName: $("#semesterName"), termStatus: $("#termStatus"), weekNumber: $("#weekNumber"), weekRange: $("#weekRange"),
   dayStrip: $("#dayStrip"), selectedDateLabel: $("#selectedDateLabel"), classCount: $("#classCount"),
   courseList: $("#courseList"), manageList: $("#manageList"), scheduleView: $("#scheduleView"),
+  weekView: $("#weekView"), weekGrid: $("#weekGrid"), weekGridNumber: $("#weekGridNumber"), weekGridRange: $("#weekGridRange"),
+  weekGridPrevious: $("#weekGridPrevious"), weekGridNext: $("#weekGridNext"), weekGridToday: $("#weekGridToday"), weekGridEmpty: $("#weekGridEmpty"),
   monthView: $("#monthView"), monthGrid: $("#monthGrid"), visibleMonthLabel: $("#visibleMonthLabel"),
   dayScheduleDialog: $("#dayScheduleDialog"), dayScheduleMeta: $("#dayScheduleMeta"), dayScheduleTitle: $("#dayScheduleTitle"), dayScheduleCourses: $("#dayScheduleCourses"),
   manageView: $("#manageView"), previousWeek: $("#previousWeek"), nextWeek: $("#nextWeek"),
@@ -38,8 +33,6 @@ const elements = {
   weekOneStart: $("#weekOneStart"), classStartDate: $("#classStartDate"), teachingDateError: $("#teachingDateError"),
   notificationView: $("#notificationView"), notificationEnabled: $("#notificationEnabled"),
   notificationLeadMinutes: $("#notificationLeadMinutes"), notificationShowDetails: $("#notificationShowDetails"),
-  mapView: $("#mapView"), campusMapList: $("#campusMapList"), campusMapDialog: $("#campusMapDialog"),
-  mapCanvas: $("#mapCanvas"), mapViewerImage: $("#mapViewerImage"),
   usageNoticeDialog: $("#usageNoticeDialog"), startupUpdateDialog: $("#startupUpdateDialog")
 };
 
@@ -165,6 +158,7 @@ function render() {
   renderWeekHeader();
   renderDays();
   renderCourses();
+  renderWeekGrid();
   renderMonthView();
   renderManageList();
 }
@@ -239,14 +233,13 @@ function liveStatus(session, courseDate = dateFor(selectedWeek, selectedDay)) {
 
 function courseCard(session, courseDate = dateFor(selectedWeek, selectedDay), editable = true) {
   const status = liveStatus(session, courseDate);
-  const linkedMap = campusMaps.find((item) => item.id === session.campusMapId);
   return `<article class="course-card" style="--course-color:${escapeHtml(session.color || DEFAULT_COLOR)}">
     <div class="course-accent"></div>
     <div class="course-content">
       <div class="course-topline"><span class="course-code">${escapeHtml(session.code || "自定义课程")}</span>${status ? `<span class="status-pill">${status}</span>` : ""}</div>
       <h3>${escapeHtml(session.name)}</h3>
       <div class="detail-row"><span class="detail-icon">◷</span><span>${periodTime(session)} · 第${session.periodStart}–${session.periodEnd}节</span></div>
-      <div class="detail-row"><span class="detail-icon">⌖</span><span>${escapeHtml(session.location)}${session.campus ? `<br>${escapeHtml(session.campus)}` : ""}${linkedMap ? `<button class="map-link-button open-campus-map" type="button" data-map-id="${escapeHtml(linkedMap.id)}">查看地图</button>` : ""}</span></div>
+      <div class="detail-row"><span class="detail-icon">⌖</span><span>${escapeHtml(session.location)}${session.campus ? `<br>${escapeHtml(session.campus)}` : ""}</span></div>
       ${session.teacher ? `<div class="detail-row"><span class="detail-icon">人</span><span>${escapeHtml(session.teacher)}</span></div>` : ""}
       ${editable ? `<div class="card-actions"><button class="text-button edit-course" data-id="${escapeHtml(session.id)}">修改此安排 →</button></div>` : ""}
     </div>
@@ -266,6 +259,66 @@ function renderCourses() {
   elements.courseList.innerHTML = sessions.length
     ? sessions.map((session) => courseCard(session, date)).join("")
     : `<div class="empty-state"><strong>${beforeClassStart ? "尚未到实际开课日期" : `${isActualToday ? "今天" : "该日"}没有课程`}</strong><span>${beforeClassStart ? `实际开课日期为 ${formatDate(parseLocalDate(state.semester.classStartDate), true)}` : "可以安心安排阅读、实验或休息。"}</span></div>`;
+}
+
+function weekGridPeriods() {
+  if (state.periods.length) return [...state.periods].sort((a, b) => a.number - b.number);
+  const maxPeriod = state.sessions.reduce((max, item) => Math.max(max, item.periodEnd), 0);
+  return Array.from({length: Math.max(maxPeriod, 12)}, (_, index) => ({number: index + 1, start: "", end: ""}));
+}
+
+function weekGridOverlapCount(list, session) {
+  return list.filter((item) => item !== session
+    && item.periodStart <= session.periodEnd && session.periodStart <= item.periodEnd).length;
+}
+
+function hexToRgba(hex, alpha) {
+  const value = String(hex || DEFAULT_COLOR).replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(value)) return `rgba(49,87,164,${alpha})`;
+  return `rgba(${parseInt(value.slice(0, 2), 16)},${parseInt(value.slice(2, 4), 16)},${parseInt(value.slice(4, 6), 16)},${alpha})`;
+}
+
+function weekGridCard(session, list, rowFor) {
+  const color = session.color || DEFAULT_COLOR;
+  const row = rowFor.get(session.periodStart) ?? rowFor.size + 1;
+  const span = Math.max(1, (rowFor.get(session.periodEnd) ?? row) - row + 1);
+  const placement = `grid-column:${session.day + 1};grid-row:${row}/span ${span};`
+    + `--course-color:${escapeHtml(color)};--course-soft:${hexToRgba(color, 0.16)}`;
+  const overlap = weekGridOverlapCount(list, session) ? " week-card-overlap" : "";
+  return `<button class="week-card edit-course${overlap}" type="button" data-id="${escapeHtml(session.id)}" style="${placement}">
+    <strong>${escapeHtml(session.name)}</strong>
+    ${session.location ? `<span>${escapeHtml(session.location)}</span>` : ""}
+    ${session.teacher ? `<span>${escapeHtml(session.teacher)}</span>` : ""}
+  </button>`;
+}
+
+function renderWeekGrid() {
+  const periods = weekGridPeriods();
+  const rowFor = new Map(periods.map((period, index) => [period.number, index + 2]));
+  elements.weekGridNumber.textContent = `第 ${selectedWeek} 周`;
+  elements.weekGridRange.textContent = `${formatDate(dateFor(selectedWeek, 1))}—${formatDate(dateFor(selectedWeek, 7))}`;
+  elements.weekGridPrevious.disabled = selectedWeek <= 1;
+  elements.weekGridNext.disabled = selectedWeek >= state.semester.totalWeeks;
+  const todayKey = localDateKey(new Date());
+  const cells = ['<div class="week-grid-corner" aria-hidden="true"></div>'];
+  for (let day = 1; day <= 7; day += 1) {
+    const date = dateFor(selectedWeek, day);
+    const today = localDateKey(date) === todayKey ? " today" : "";
+    cells.push(`<div class="week-grid-head${today}" style="grid-column:${day + 1};grid-row:1"><span>周${SHORT_DAYS[day - 1]}</span><strong>${date.getDate()}</strong></div>`);
+  }
+  for (const period of periods) {
+    const time = period.start && period.end ? `${period.start}–${period.end}` : "";
+    cells.push(`<div class="week-grid-time" style="grid-column:1;grid-row:${rowFor.get(period.number)}"><strong>${period.number}</strong><span>${escapeHtml(time)}</span></div>`);
+  }
+  const daySessions = Array.from({length: 7}, (_, index) =>
+    state.sessions.filter((item) => item.day === index + 1 && item.weeks.includes(selectedWeek))
+      .sort((a, b) => a.periodStart - b.periodStart));
+  for (const list of daySessions) {
+    for (const session of list) cells.push(weekGridCard(session, list, rowFor));
+  }
+  elements.weekGrid.style.gridTemplateRows = `auto repeat(${periods.length}, minmax(58px, auto))`;
+  elements.weekGrid.innerHTML = cells.join("");
+  elements.weekGridEmpty.classList.toggle("hidden", daySessions.some((list) => list.length));
 }
 
 function renderMonthView() {
@@ -355,13 +408,11 @@ function openEditor(id = "") {
   elements.deleteCourse.classList.toggle("hidden", !session);
   const values = session || {
     id: "", name: "", code: "", teacher: "", day: selectedDay, weeks: [selectedWeek],
-    periodStart: 1, periodEnd: 2, location: "", campus: state.semester.campus, campusMapId: "", notes: ""
+    periodStart: 1, periodEnd: 2, location: "", campus: state.semester.campus, notes: ""
   };
   for (const name of ["id", "name", "code", "teacher", "day", "periodStart", "periodEnd", "location", "campus", "notes"]) {
     form.elements[name].value = values[name] ?? "";
   }
-  form.elements.campusMapId.innerHTML = `<option value="">不关联地图</option>${campusMaps.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.campus ? `${item.campus} · ${item.name}` : item.name)}</option>`).join("")}`;
-  form.elements.campusMapId.value = values.campusMapId || "";
   form.elements.weeksText.value = session?.weekLabel || formatWeeks(values.weeks).replace(/[第周]/g, "").replace("–", "-");
   elements.courseDialog.showModal();
 }
@@ -399,7 +450,6 @@ async function submitCourse(event) {
       teacher: String(form.get("teacher")).trim(), day: Number(form.get("day")),
       periodStart, periodEnd, weeks, weekLabel: weeksText.trim(),
       location: String(form.get("location")).trim(), campus: String(form.get("campus")).trim(),
-      campusMapId: String(form.get("campusMapId") || ""),
       notes: String(form.get("notes")).trim(), color: previous?.color || DEFAULT_COLOR
     };
     if (previous) state.sessions = state.sessions.map((item) => item.id === existingId ? session : item);
@@ -549,129 +599,18 @@ function showToast(message) {
   toastTimer = setTimeout(() => elements.toast.classList.remove("show"), 2300);
 }
 
-function mapUrl(id) {
-  return `https://courseapp.local/maps/${encodeURIComponent(id)}`;
-}
-
-function refreshCampusMaps() {
-  if (nativePlatform() !== "Android" || !window.CourseAppNative?.listCampusMaps) return;
-  try {
-    const result = nativeResult("listCampusMaps");
-    if (!result.ok) throw new Error(result.error || "地图读取失败");
-    campusMaps = Array.isArray(result.maps) ? result.maps : [];
-    renderCampusMaps();
-  } catch (error) {
-    elements.campusMapList.innerHTML = `<div class="empty-state"><strong>无法读取地图</strong><span>${escapeHtml(error.message)}</span></div>`;
-  }
-}
-
-function renderCampusMaps() {
-  elements.campusMapList.innerHTML = campusMaps.length ? campusMaps.map((item) => `<article class="map-list-item">
-    <img class="map-thumbnail" src="${mapUrl(item.id)}" alt="" />
-    <div class="map-list-content">
-      <h3>${escapeHtml(item.name)}</h3>
-      <p>${escapeHtml(item.campus || "未填写校区")}${item.source === "pdf" ? " · PDF 提取" : " · 本地图片"}</p>
-      <div class="map-list-actions">
-        <button class="open-campus-map" type="button" data-map-id="${escapeHtml(item.id)}">查看</button>
-        <button class="rename-campus-map" type="button" data-map-id="${escapeHtml(item.id)}">重命名</button>
-        <button class="delete-map delete-campus-map" type="button" data-map-id="${escapeHtml(item.id)}">删除</button>
-      </div>
-    </div>
-  </article>`).join("") : '<div class="empty-state"><strong>还没有校区地图</strong><span>可以导入图片，或从学校通知 PDF 中提取。</span></div>';
-}
-
-function pickCampusMap(kind) {
-  try {
-    const name = $("#campusMapName").value.trim();
-    const campus = $("#campusMapCampus").value.trim();
-    const result = nativeResult("pickCampusMap", kind, name, campus);
-    if (!result.ok) throw new Error(result.error || "无法打开文件选择器");
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-window.onNativeCampusMapImported = function (payload) {
-  const result = JSON.parse(payload);
-  if (!result.ok) {
-    alert(`地图导入失败：${result.error || "未知错误"}`);
-    return;
-  }
-  $("#campusMapName").value = "";
-  refreshCampusMaps();
-  showToast("校区地图已保存在本机");
-};
-
-function openCampusMap(id) {
-  const item = campusMaps.find((map) => map.id === id);
-  if (!item) return;
-  $("#mapViewerTitle").textContent = item.name;
-  $("#mapViewerCampus").textContent = item.campus || "校区地图";
-  elements.mapViewerImage.src = `${mapUrl(item.id)}?v=${encodeURIComponent(item.updatedAt || "")}`;
-  elements.campusMapDialog.showModal();
-}
-
-function renderMapTransform() {
-  const totalScale = mapBaseScale * mapScale;
-  elements.mapViewerImage.style.transform = `translate(-50%, -50%) translate(${mapTranslateX}px, ${mapTranslateY}px) scale(${totalScale})`;
-}
-
-function resetMapViewer() {
-  const image = elements.mapViewerImage;
-  const canvas = elements.mapCanvas;
-  if (!image.naturalWidth || !image.naturalHeight) return;
-  mapBaseScale = Math.min(canvas.clientWidth / image.naturalWidth, canvas.clientHeight / image.naturalHeight);
-  mapScale = 1;
-  mapTranslateX = 0;
-  mapTranslateY = 0;
-  renderMapTransform();
-}
-
-function zoomMap(multiplier) {
-  mapScale = Math.max(1, Math.min(6, mapScale * multiplier));
-  if (mapScale === 1) {
-    mapTranslateX = 0;
-    mapTranslateY = 0;
-  }
-  renderMapTransform();
-}
-
-function renameCampusMap(id) {
-  const item = campusMaps.find((map) => map.id === id);
-  if (!item) return;
-  const name = prompt("地图名称", item.name);
-  if (name === null || !name.trim()) return;
-  const campus = prompt("所属校区", item.campus || "");
-  if (campus === null) return;
-  const result = nativeResult("updateCampusMap", id, name.trim(), campus.trim());
-  if (!result.ok) return alert(result.error || "地图更新失败");
-  refreshCampusMaps();
-  render();
-}
-
-async function deleteCampusMap(id) {
-  const item = campusMaps.find((map) => map.id === id);
-  if (!item || !confirm(`确定删除地图“${item.name}”吗？关联课程将保留地点文字，但不再显示地图入口。`)) return;
-  const result = nativeResult("deleteCampusMap", id);
-  if (!result.ok) return alert(result.error || "地图删除失败");
-  state.sessions = state.sessions.map((session) => session.campusMapId === id ? {...session, campusMapId: ""} : session);
-  await saveState("校区地图已删除");
-  refreshCampusMaps();
-  render();
-}
-
 function switchView(view) {
   activeView = view;
   elements.scheduleView.classList.toggle("hidden", view !== "schedule");
+  elements.weekView.classList.toggle("hidden", view !== "week");
   elements.monthView.classList.toggle("hidden", view !== "month");
   elements.manageView.classList.toggle("hidden", view !== "manage");
   elements.notificationView.classList.toggle("hidden", view !== "notification");
-  elements.mapView.classList.toggle("hidden", view !== "map");
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
+  if (view === "week") renderWeekGrid();
   if (view === "month") renderMonthView();
   if (view === "manage") renderManageList();
   if (view === "notification") refreshNotificationSettings();
-  if (view === "map") refreshCampusMaps();
   window.scrollTo({top: 0, behavior: "smooth"});
 }
 
@@ -881,6 +820,9 @@ function downloadUpdate() {
 function bindEvents() {
   elements.previousWeek.addEventListener("click", () => { selectedWeek = Math.max(1, selectedWeek - 1); render(); });
   elements.nextWeek.addEventListener("click", () => { selectedWeek = Math.min(state.semester.totalWeeks, selectedWeek + 1); render(); });
+  elements.weekGridPrevious.addEventListener("click", () => { selectedWeek = Math.max(1, selectedWeek - 1); render(); });
+  elements.weekGridNext.addEventListener("click", () => { selectedWeek = Math.min(state.semester.totalWeeks, selectedWeek + 1); render(); });
+  elements.weekGridToday.addEventListener("click", () => { const position = teachingPosition(); selectedWeek = position.week; selectedDay = position.day; render(); });
   elements.weekSelect.addEventListener("change", () => { selectedWeek = Number(elements.weekSelect.value); render(); });
   elements.todayButton.addEventListener("click", () => { const position = teachingPosition(); selectedWeek = position.week; selectedDay = position.day; render(); });
   elements.dayStrip.addEventListener("click", (event) => {
@@ -914,12 +856,6 @@ function bindEvents() {
   document.body.addEventListener("click", (event) => {
     const editor = event.target.closest(".edit-course");
     if (editor) openEditor(editor.dataset.id);
-    const mapOpener = event.target.closest(".open-campus-map");
-    if (mapOpener) openCampusMap(mapOpener.dataset.mapId);
-    const mapRenamer = event.target.closest(".rename-campus-map");
-    if (mapRenamer) renameCampusMap(mapRenamer.dataset.mapId);
-    const mapDeleter = event.target.closest(".delete-campus-map");
-    if (mapDeleter) deleteCampusMap(mapDeleter.dataset.mapId);
   });
   document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   $("#addCourse").addEventListener("click", () => openEditor());
@@ -930,44 +866,6 @@ function bindEvents() {
   $("#requestNotificationPermission").addEventListener("click", requestNotificationPermission);
   $("#openExactAlarmSettings").addEventListener("click", openExactAlarmSettings);
   $("#sendTestNotification").addEventListener("click", sendTestNotification);
-  $("#importMapImage").addEventListener("click", () => pickCampusMap("image"));
-  $("#importMapPdf").addEventListener("click", () => pickCampusMap("pdf"));
-  $("#closeCampusMap").addEventListener("click", () => elements.campusMapDialog.close());
-  $("#mapZoomOut").addEventListener("click", () => zoomMap(0.8));
-  $("#mapZoomIn").addEventListener("click", () => zoomMap(1.25));
-  $("#mapReset").addEventListener("click", resetMapViewer);
-  elements.mapViewerImage.addEventListener("load", resetMapViewer);
-  elements.mapCanvas.addEventListener("pointerdown", (event) => {
-    elements.mapCanvas.setPointerCapture(event.pointerId);
-    mapPointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
-    if (mapPointers.size === 1) mapGesture = {x: event.clientX, y: event.clientY, translateX: mapTranslateX, translateY: mapTranslateY};
-    if (mapPointers.size === 2) {
-      const [first, second] = [...mapPointers.values()];
-      mapGesture = {distance: Math.hypot(second.x - first.x, second.y - first.y), scale: mapScale};
-    }
-  });
-  elements.mapCanvas.addEventListener("pointermove", (event) => {
-    if (!mapPointers.has(event.pointerId)) return;
-    mapPointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
-    if (mapPointers.size === 1 && mapScale > 1 && mapGesture?.translateX !== undefined) {
-      mapTranslateX = mapGesture.translateX + event.clientX - mapGesture.x;
-      mapTranslateY = mapGesture.translateY + event.clientY - mapGesture.y;
-      renderMapTransform();
-    } else if (mapPointers.size === 2 && mapGesture?.distance) {
-      const [first, second] = [...mapPointers.values()];
-      mapScale = Math.max(1, Math.min(6, mapGesture.scale * Math.hypot(second.x - first.x, second.y - first.y) / mapGesture.distance));
-      renderMapTransform();
-    }
-  });
-  const endMapPointer = (event) => {
-    mapPointers.delete(event.pointerId);
-    if (mapPointers.size === 1) {
-      const point = [...mapPointers.values()][0];
-      mapGesture = {x: point.x, y: point.y, translateX: mapTranslateX, translateY: mapTranslateY};
-    } else if (!mapPointers.size) mapGesture = undefined;
-  };
-  elements.mapCanvas.addEventListener("pointerup", endMapPointer);
-  elements.mapCanvas.addEventListener("pointercancel", endMapPointer);
   $("#closeDialog").addEventListener("click", () => elements.courseDialog.close());
   $("#cancelDialog").addEventListener("click", () => elements.courseDialog.close());
   $("#closeDaySchedule").addEventListener("click", () => elements.dayScheduleDialog.close());
@@ -1021,9 +919,8 @@ async function initialize() {
   selectedWeek = position.week;
   selectedDay = position.day;
   bindEvents();
-  if (nativePlatform() === "Android" && window.CourseAppNative?.listCampusMaps) {
+  if (nativePlatform() === "Android" && window.CourseAppNative?.getNotificationSettings) {
     document.querySelectorAll(".android-only").forEach((item) => item.classList.remove("hidden"));
-    refreshCampusMaps();
   }
   render();
   refreshSystemClock();

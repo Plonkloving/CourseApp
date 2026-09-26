@@ -73,7 +73,7 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("prefers-color-scheme: dark", html)
         self.assertIn("prefers-reduced-motion: reduce", styles)
         self.assertIn('name="theme-color" content="#243F7A"', html)
-        self.assertIn('CACHE_NAME = "course-app-v10"', service_worker)
+        self.assertIn('CACHE_NAME = "course-app-v11"', service_worker)
 
     def test_android_asset_entry_uses_classic_script(self):
         html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
@@ -293,6 +293,22 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("hasKey", server)
         self.assertIn("data/ai_config.json", gitignore)
         self.assertIn("node --check app/ai-assistant.js", workflow)
+
+    def test_manage_list_groups_and_filters(self):
+        html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "app" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('id="manageDayChips"', html)
+        self.assertIn('id="manageToggleAll"', html)
+        self.assertIn("function manageGroupKey(", script)
+        self.assertIn("manageExpanded.has(manageGroupKey(", script)
+        self.assertIn("manageFilterDay", script)
+        self.assertIn('data-group-key="${escapeHtml(group.key)}"', script)
+        self.assertIn("manage-group-head", script)
+        self.assertIn("周${SHORT_DAYS[session.day - 1]} 第${session.periodStart}–${session.periodEnd}节", script)
+        self.assertIn("manage-group-head", styles)
+        self.assertIn(".manage-day-chip", styles)
+        self.assertIn(".manage-group {", styles)
 
     def test_state_validation(self):
         server.validate_state(server.EMPTY_STATE)

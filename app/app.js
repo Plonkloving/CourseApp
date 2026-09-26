@@ -17,6 +17,8 @@ let availableUpdateVersion = "";
 let updateCheckMode = "manual";
 let resolveNoticeAcceptance;
 let weekGridFiveDays = localStorage.getItem("course-app-week-days") !== "7";
+let manageExpanded = new Set();
+let manageFilterDay = 0;
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -29,6 +31,7 @@ const elements = {
   monthView: $("#monthView"), monthGrid: $("#monthGrid"), visibleMonthLabel: $("#visibleMonthLabel"),
   dayScheduleDialog: $("#dayScheduleDialog"), dayScheduleMeta: $("#dayScheduleMeta"), dayScheduleTitle: $("#dayScheduleTitle"), dayScheduleCourses: $("#dayScheduleCourses"),
   manageView: $("#manageView"), previousWeek: $("#previousWeek"), nextWeek: $("#nextWeek"),
+  manageDayChips: $("#manageDayChips"), manageToggleAll: $("#manageToggleAll"),
   todayButton: $("#todayButton"), weekSelect: $("#weekSelect"), courseDialog: $("#courseDialog"), courseForm: $("#courseForm"),
   deleteCourse: $("#deleteCourse"), formError: $("#formError"), toast: $("#toast"),
   infoDialog: $("#infoDialog"), lanUrls: $("#lanUrls"), excelFile: $("#excelFile"),
@@ -361,12 +364,59 @@ function openDaySchedule(date) {
   elements.dayScheduleDialog.showModal();
 }
 
+function manageGroupKey(session) {
+  return `${session.code || ""}|${session.name}`;
+}
+
+function renderManageChips() {
+  const chips = [`<button class="manage-day-chip${manageFilterDay === 0 ? " active" : ""}" data-day="0" type="button">全部</button>`];
+  for (let day = 1; day <= 7; day += 1) {
+    chips.push(`<button class="manage-day-chip${manageFilterDay === day ? " active" : ""}" data-day="${day}" type="button">周${SHORT_DAYS[day - 1]}</button>`);
+  }
+  elements.manageDayChips.innerHTML = chips.join("");
+}
+
 function renderManageList() {
-  const sessions = [...state.sessions].sort((a, b) => a.name.localeCompare(b.name, "zh-CN") || a.weeks[0] - b.weeks[0] || a.day - b.day);
-  elements.manageList.innerHTML = sessions.length ? sessions.map((session) => `<button class="manage-item edit-course" data-id="${escapeHtml(session.id)}">
-    <div><h3>${escapeHtml(session.name)}</h3><p>${escapeHtml(session.weekLabel || formatWeeks(session.weeks))} · ${DAY_NAMES[session.day - 1]} · 第${session.periodStart}–${session.periodEnd}节<br>${escapeHtml(session.teacher || "未填写教师")} · ${escapeHtml(session.location)}</p></div>
-    <span class="edit-mark">编辑</span>
-  </button>`).join("") : '<div class="empty-state"><strong>还没有课程</strong><span>请新增课程，或导入 Excel／图片课表。</span></div>';
+  const filtered = manageFilterDay
+    ? state.sessions.filter((item) => item.day === manageFilterDay)
+    : state.sessions;
+  const groups = new Map();
+  for (const session of filtered) {
+    const key = manageGroupKey(session);
+    if (!groups.has(key)) groups.set(key, {key, name: session.name, color: session.color || DEFAULT_COLOR, items: []});
+    groups.get(key).items.push(session);
+  }
+  for (const group of groups.values()) {
+    group.items.sort((a, b) => a.day - b.day || a.periodStart - b.periodStart || (a.weeks[0] || 0) - (b.weeks[0] || 0));
+  }
+  renderManageChips();
+  if (!groups.size) {
+    elements.manageList.innerHTML = manageFilterDay
+      ? `<div class="empty-state"><strong>周${SHORT_DAYS[manageFilterDay - 1]}没有课程</strong><span>可以换一个星期查看，或新增课程。</span></div>`
+      : '<div class="empty-state"><strong>还没有课程</strong><span>请新增课程，或导入 Excel 课表。</span></div>';
+    elements.manageToggleAll.classList.add("hidden");
+    return;
+  }
+  elements.manageToggleAll.classList.remove("hidden");
+  elements.manageToggleAll.textContent = filtered.some((item) => !manageExpanded.has(manageGroupKey(item))) ? "全部展开" : "全部收起";
+  elements.manageList.innerHTML = [...groups.values()].map((group) => {
+    const expanded = manageExpanded.has(group.key);
+    return `<section class="manage-group">
+      <button class="manage-group-head" type="button" data-group-key="${escapeHtml(group.key)}" aria-expanded="${expanded}">
+        <span class="manage-dot" style="--course-color:${escapeHtml(group.color)}"></span>
+        <span class="manage-group-name">${escapeHtml(group.name)}</span>
+        <span class="manage-count">${group.items.length} 个安排</span>
+        <span class="manage-caret">${expanded ? "⌄" : "›"}</span>
+      </button>
+      ${expanded ? `<div class="manage-group-items">${group.items.map((session) => `<button class="manage-item edit-course" data-id="${escapeHtml(session.id)}">
+        <div>
+          <p>周${SHORT_DAYS[session.day - 1]} 第${session.periodStart}–${session.periodEnd}节 · ${escapeHtml(session.weekLabel || formatWeeks(session.weeks))}</p>
+          <p>${[session.teacher, session.location].filter(Boolean).map((part) => escapeHtml(part)).join(" · ") || "未填写地点"}</p>
+        </div>
+        <span class="edit-mark">编辑</span>
+      </button>`).join("")}</div>` : ""}
+    </section>`;
+  }).join("");
 }
 
 function formatWeeks(weeks) {
@@ -904,6 +954,26 @@ function bindEvents() {
   document.body.addEventListener("click", (event) => {
     const editor = event.target.closest(".edit-course");
     if (editor) openEditor(editor.dataset.id);
+  });
+  elements.manageList.addEventListener("click", (event) => {
+    const head = event.target.closest("[data-group-key]");
+    if (!head) return;
+    const key = head.dataset.groupKey;
+    if (manageExpanded.has(key)) manageExpanded.delete(key); else manageExpanded.add(key);
+    renderManageList();
+  });
+  elements.manageDayChips.addEventListener("click", (event) => {
+    const chip = event.target.closest("[data-day]");
+    if (!chip) return;
+    manageFilterDay = Number(chip.dataset.day) || 0;
+    renderManageList();
+  });
+  elements.manageToggleAll.addEventListener("click", () => {
+    const keys = new Set(state.sessions.map(manageGroupKey));
+    const anyCollapsed = [...keys].some((key) => !manageExpanded.has(key));
+    if (anyCollapsed) state.sessions.forEach((item) => manageExpanded.add(manageGroupKey(item)));
+    else keys.forEach((key) => manageExpanded.delete(key));
+    renderManageList();
   });
   document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   $("#addCourse").addEventListener("click", () => openEditor());

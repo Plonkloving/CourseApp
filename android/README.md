@@ -4,7 +4,7 @@
 
 - 应用 ID：`com.local.courseschedule`
 - 最低 Android 版本：Android 6.0（API 23）
-- 当前版本：1.6.0（versionCode 16）
+- 当前版本：1.6.1（versionCode 17）
 - 手机端修改位置：Android 应用私有 `SharedPreferences`；AI 助手的 API Key 经 AndroidKeyStore 加密后单独存放
 - 正常覆盖安装升级会保留修改；卸载应用会清除修改。
 - 发布新版必须保持应用 ID 和发布签名不变，并递增 `versionCode`。

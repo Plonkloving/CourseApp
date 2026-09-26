@@ -4,7 +4,7 @@
 
 ## Android 离线安装版
 
-安装包位于 `outputs/CourseSchedule-1.6.0.apk`，支持 Android 6.0 及以上系统。将 APK 传到手机后直接安装即可，不需要电脑、Wi-Fi 或服务器。
+安装包位于 `outputs/CourseSchedule-1.6.1.apk`，支持 Android 6.0 及以上系统。将 APK 传到手机后直接安装即可，不需要电脑、Wi-Fi 或服务器。
 
 - 安装包只包含空白课程表，不内置示例、真实课表或原始 Excel 数据。
 - 手机上新增、修改、删除的课程保存在应用私有空间。
@@ -50,7 +50,7 @@
 
 ## 构建与发布注意事项
 
-- 应用 ID：`com.local.courseschedule`；当前 Android 版本：`1.6.0`（versionCode 16）。
+- 应用 ID：`com.local.courseschedule`；当前 Android 版本：`1.6.1`（versionCode 17）。
 - 更新源配置为 GitHub 仓库 `Plonkloving/CourseApp`，Release 中需至少包含一个 `.apk` 文件。
 - `android/signing/`、`android/keystore.properties`、真实 Excel 和真实课程数据不得上传公开仓库；发布新版必须继续使用原签名。
 - Excel 解析使用随 APK 打包的 SheetJS CE 0.20.3，许可证位于 `app/vendor/SheetJS-LICENSE.txt`。

@@ -16,6 +16,7 @@ let availableUpdateUrl = "";
 let availableUpdateVersion = "";
 let updateCheckMode = "manual";
 let resolveNoticeAcceptance;
+let weekGridFiveDays = localStorage.getItem("course-app-week-days") !== "7";
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -24,6 +25,7 @@ const elements = {
   courseList: $("#courseList"), manageList: $("#manageList"), scheduleView: $("#scheduleView"),
   weekView: $("#weekView"), weekGrid: $("#weekGrid"), weekGridNumber: $("#weekGridNumber"), weekGridRange: $("#weekGridRange"),
   weekGridPrevious: $("#weekGridPrevious"), weekGridNext: $("#weekGridNext"), weekGridToday: $("#weekGridToday"), weekGridEmpty: $("#weekGridEmpty"),
+  weekGridDays: $("#weekGridDays"),
   monthView: $("#monthView"), monthGrid: $("#monthGrid"), visibleMonthLabel: $("#visibleMonthLabel"),
   dayScheduleDialog: $("#dayScheduleDialog"), dayScheduleMeta: $("#dayScheduleMeta"), dayScheduleTitle: $("#dayScheduleTitle"), dayScheduleCourses: $("#dayScheduleCourses"),
   manageView: $("#manageView"), previousWeek: $("#previousWeek"), nextWeek: $("#nextWeek"),
@@ -288,35 +290,37 @@ function weekGridCard(session, list, rowFor) {
   return `<button class="week-card edit-course${overlap}" type="button" data-id="${escapeHtml(session.id)}" style="${placement}">
     <strong>${escapeHtml(session.name)}</strong>
     ${session.location ? `<span>${escapeHtml(session.location)}</span>` : ""}
-    ${session.teacher ? `<span>${escapeHtml(session.teacher)}</span>` : ""}
   </button>`;
 }
 
 function renderWeekGrid() {
   const periods = weekGridPeriods();
   const rowFor = new Map(periods.map((period, index) => [period.number, index + 2]));
+  const daySessions = Array.from({length: 7}, (_, index) =>
+    state.sessions.filter((item) => item.day === index + 1 && item.weeks.includes(selectedWeek))
+      .sort((a, b) => a.periodStart - b.periodStart));
+  const collapseWeekend = weekGridFiveDays && !daySessions[5].length && !daySessions[6].length;
+  const dayCount = collapseWeekend ? 5 : 7;
   elements.weekGridNumber.textContent = `第 ${selectedWeek} 周`;
   elements.weekGridRange.textContent = `${formatDate(dateFor(selectedWeek, 1))}—${formatDate(dateFor(selectedWeek, 7))}`;
   elements.weekGridPrevious.disabled = selectedWeek <= 1;
   elements.weekGridNext.disabled = selectedWeek >= state.semester.totalWeeks;
+  elements.weekGridDays.textContent = dayCount === 5 ? "5天" : "7天";
   const todayKey = localDateKey(new Date());
   const cells = ['<div class="week-grid-corner" aria-hidden="true"></div>'];
-  for (let day = 1; day <= 7; day += 1) {
+  for (let day = 1; day <= dayCount; day += 1) {
     const date = dateFor(selectedWeek, day);
     const today = localDateKey(date) === todayKey ? " today" : "";
     cells.push(`<div class="week-grid-head${today}" style="grid-column:${day + 1};grid-row:1"><span>周${SHORT_DAYS[day - 1]}</span><strong>${date.getDate()}</strong></div>`);
   }
   for (const period of periods) {
-    const time = period.start && period.end ? `${period.start}–${period.end}` : "";
-    cells.push(`<div class="week-grid-time" style="grid-column:1;grid-row:${rowFor.get(period.number)}"><strong>${period.number}</strong><span>${escapeHtml(time)}</span></div>`);
+    cells.push(`<div class="week-grid-time" style="grid-column:1;grid-row:${rowFor.get(period.number)}"><strong>${period.number}</strong><span>${escapeHtml(period.start || "")}</span></div>`);
   }
-  const daySessions = Array.from({length: 7}, (_, index) =>
-    state.sessions.filter((item) => item.day === index + 1 && item.weeks.includes(selectedWeek))
-      .sort((a, b) => a.periodStart - b.periodStart));
-  for (const list of daySessions) {
-    for (const session of list) cells.push(weekGridCard(session, list, rowFor));
+  for (let day = 0; day < dayCount; day += 1) {
+    for (const session of daySessions[day]) cells.push(weekGridCard(session, daySessions[day], rowFor));
   }
-  elements.weekGrid.style.gridTemplateRows = `auto repeat(${periods.length}, minmax(58px, auto))`;
+  elements.weekGrid.style.gridTemplateColumns = `30px repeat(${dayCount}, minmax(0, 1fr))`;
+  elements.weekGrid.style.gridTemplateRows = `auto repeat(${periods.length}, minmax(48px, auto))`;
   elements.weekGrid.innerHTML = cells.join("");
   elements.weekGridEmpty.classList.toggle("hidden", daySessions.some((list) => list.length));
 }
@@ -599,6 +603,45 @@ function showToast(message) {
   toastTimer = setTimeout(() => elements.toast.classList.remove("show"), 2300);
 }
 
+const THEME_STORAGE_KEY = "course-app-theme";
+const THEME_TOASTS = {system: "外观已跟随系统", light: "已切换到浅色模式", dark: "已切换到深色模式"};
+
+function systemPrefersDark() {
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function themeMode() {
+  const value = localStorage.getItem(THEME_STORAGE_KEY);
+  return value === "light" || value === "dark" ? value : "system";
+}
+
+function applyTheme() {
+  const mode = themeMode();
+  const dark = mode === "dark" || (mode === "system" && systemPrefersDark());
+  document.documentElement.classList.toggle("dark", dark);
+  document.documentElement.style.colorScheme = mode === "system" ? "" : mode;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#101b33" : "#243F7A");
+  document.querySelectorAll(".theme-option").forEach((button) => {
+    button.classList.toggle("active", button.dataset.themeChoice === mode);
+  });
+  if (window.CourseAppNative?.setSystemBars) {
+    try { JSON.parse(window.CourseAppNative.setSystemBars(dark)); } catch (error) {}
+  }
+}
+
+function bindThemeControls() {
+  document.querySelectorAll(".theme-option").forEach((button) => button.addEventListener("click", () => {
+    const mode = button.dataset.themeChoice || "system";
+    localStorage.setItem(THEME_STORAGE_KEY, mode);
+    applyTheme();
+    showToast(THEME_TOASTS[mode] || "外观已更新");
+  }));
+  const query = window.matchMedia("(prefers-color-scheme: dark)");
+  const onSystemChange = () => { if (themeMode() === "system") applyTheme(); };
+  if (query.addEventListener) query.addEventListener("change", onSystemChange);
+  else if (query.addListener) query.addListener(onSystemChange);
+}
+
 function switchView(view) {
   activeView = view;
   elements.scheduleView.classList.toggle("hidden", view !== "schedule");
@@ -823,6 +866,11 @@ function bindEvents() {
   elements.weekGridPrevious.addEventListener("click", () => { selectedWeek = Math.max(1, selectedWeek - 1); render(); });
   elements.weekGridNext.addEventListener("click", () => { selectedWeek = Math.min(state.semester.totalWeeks, selectedWeek + 1); render(); });
   elements.weekGridToday.addEventListener("click", () => { const position = teachingPosition(); selectedWeek = position.week; selectedDay = position.day; render(); });
+  elements.weekGridDays.addEventListener("click", () => {
+    weekGridFiveDays = !weekGridFiveDays;
+    localStorage.setItem("course-app-week-days", weekGridFiveDays ? "5" : "7");
+    renderWeekGrid();
+  });
   elements.weekSelect.addEventListener("change", () => { selectedWeek = Number(elements.weekSelect.value); render(); });
   elements.todayButton.addEventListener("click", () => { const position = teachingPosition(); selectedWeek = position.week; selectedDay = position.day; render(); });
   elements.dayStrip.addEventListener("click", (event) => {
@@ -919,6 +967,8 @@ async function initialize() {
   selectedWeek = position.week;
   selectedDay = position.day;
   bindEvents();
+  bindThemeControls();
+  applyTheme();
   if (nativePlatform() === "Android" && window.CourseAppNative?.getNotificationSettings) {
     document.querySelectorAll(".android-only").forEach((item) => item.classList.remove("hidden"));
   }

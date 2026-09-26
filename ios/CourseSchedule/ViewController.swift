@@ -11,7 +11,10 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor(red: 251 / 255, green: 250 / 255, blue: 247 / 255, alpha: 1)
+        let dark = traitCollection.userInterfaceStyle == .dark
+        view.backgroundColor = dark
+            ? UIColor(red: 17 / 255, green: 24 / 255, blue: 44 / 255, alpha: 1)
+            : UIColor(red: 251 / 255, green: 250 / 255, blue: 247 / 255, alpha: 1)
 
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true

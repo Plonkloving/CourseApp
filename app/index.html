@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#243F7A" />
     <meta name="description" content="本地课程表" />
+    <script>
+      (function () {
+        var theme = "system";
+        try { theme = localStorage.getItem("course-app-theme") || "system"; } catch (error) {}
+        var dark = theme === "dark" || (theme === "system"
+          && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
+        document.documentElement.style.colorScheme = theme === "system" ? "" : theme;
+      })();
+    </script>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icon-192.png" />
     <link rel="stylesheet" href="./styles.css" />
@@ -54,7 +64,10 @@
             </div>
             <button class="arrow-button" id="weekGridNext" type="button" aria-label="下一周">›</button>
           </div>
-          <button class="today-button" id="weekGridToday" type="button">回到本周</button>
+          <div class="week-view-actions">
+            <button class="today-button" id="weekGridToday" type="button">回到本周</button>
+            <button class="today-button" id="weekGridDays" type="button">5天</button>
+          </div>
           <div class="week-grid-scroll">
             <div class="week-grid" id="weekGrid" aria-label="整周课程网格"></div>
           </div>
@@ -107,6 +120,14 @@
             <button class="primary-button compact" id="saveTeachingDates" type="button">保存日期</button>
             <p id="teachingDateError" role="alert"></p>
             <small>基准日必须是星期一，用于计算周次；实际开课日期可以是任意星期，在此日期之前不会显示课程。</small>
+            <div class="theme-picker">
+              <span>外观模式</span>
+              <div class="theme-options">
+                <button type="button" class="theme-option" data-theme-choice="system">跟随系统</button>
+                <button type="button" class="theme-option" data-theme-choice="light">浅色</button>
+                <button type="button" class="theme-option" data-theme-choice="dark">深色</button>
+              </div>
+            </div>
           </div>
           <div class="manage-list" id="manageList"></div>
         </section>

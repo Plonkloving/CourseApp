@@ -4,7 +4,7 @@
 
 - 应用 ID：`com.local.courseschedule`
 - 最低 Android 版本：Android 6.0（API 23）
-- 当前版本：1.5.0（versionCode 14）
+- 当前版本：1.5.1（versionCode 15）
 - 手机端修改位置：Android 应用私有 `SharedPreferences`
 - 正常覆盖安装升级会保留修改；卸载应用会清除修改。
 - 发布新版必须保持应用 ID 和发布签名不变，并递增 `versionCode`。

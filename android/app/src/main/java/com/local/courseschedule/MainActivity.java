@@ -53,11 +53,9 @@ public class MainActivity extends Activity {
         removeLegacyVisionSecrets(this);
         removeCampusMapData(this);
         CourseNotificationScheduler.createChannel(this);
-        getWindow().setStatusBarColor(Color.rgb(23, 59, 87));
-        getWindow().setNavigationBarColor(Color.rgb(251, 250, 247));
+        applySystemBars(false);
 
         webView = new WebView(this);
-        webView.setBackgroundColor(Color.rgb(251, 250, 247));
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -66,6 +64,11 @@ public class MainActivity extends Activity {
         settings.setDatabaseEnabled(false);
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        if (Build.VERSION.SDK_INT >= 33) {
+            settings.setAlgorithmicDarkeningAllowed(false);
+        } else if (Build.VERSION.SDK_INT >= 29) {
+            settings.setForceDark(WebSettings.FORCE_DARK_OFF);
+        }
 
         nativeBridge = new NativeBridge(this);
         webView.addJavascriptInterface(nativeBridge, "CourseAppNative");
@@ -164,6 +167,18 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
+    private void applySystemBars(boolean dark) {
+        if (dark) {
+            getWindow().setStatusBarColor(Color.rgb(10, 17, 35));
+            getWindow().setNavigationBarColor(Color.rgb(16, 24, 43));
+            if (webView != null) webView.setBackgroundColor(Color.rgb(17, 24, 44));
+        } else {
+            getWindow().setStatusBarColor(Color.rgb(23, 59, 87));
+            getWindow().setNavigationBarColor(Color.rgb(251, 250, 247));
+            if (webView != null) webView.setBackgroundColor(Color.rgb(251, 250, 247));
+        }
+    }
+
     private void sendUpdateResult(JSONObject result) {
         String argument = JSONObject.quote(result.toString());
         webView.post(() -> webView.evaluateJavascript("window.onNativeUpdateCheck(" + argument + ")", null));
@@ -252,6 +267,18 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String getPlatform() {
             return "Android";
+        }
+
+        @JavascriptInterface
+        public String setSystemBars(boolean dark) {
+            JSONObject result = new JSONObject();
+            try {
+                runOnUiThread(() -> applySystemBars(dark));
+                result.put("ok", true);
+            } catch (Exception error) {
+                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
+            }
+            return result.toString();
         }
 
         @JavascriptInterface

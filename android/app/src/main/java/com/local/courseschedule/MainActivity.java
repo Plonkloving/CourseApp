@@ -12,6 +12,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
+import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.ValueCallback;
@@ -25,15 +28,24 @@ import androidx.core.content.FileProvider;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
 
 
 public class MainActivity extends Activity {
@@ -251,8 +263,13 @@ public class MainActivity extends Activity {
         private static final String PREFERENCES = "course_schedule";
         private static final String STATE_KEY = "state_json";
         private static final String PRIVACY_RESET_KEY = "privacy_reset_1_3";
+        private static final String AI_PREFS = "ai_assistant";
+        private static final String AI_KEY_ALIAS = "course_schedule_ai_key";
+        private static final String AI_CIPHER_KEY = "ai_key_cipher";
+        private static final String AI_IV_KEY = "ai_key_iv";
         private final Context context;
         private final SharedPreferences preferences;
+        private final Map<String, HttpURLConnection> aiConnections = new HashMap<>();
 
         NativeBridge(Context context) {
             this.context = context.getApplicationContext();
@@ -279,6 +296,276 @@ public class MainActivity extends Activity {
                 try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
             }
             return result.toString();
+        }
+
+        @JavascriptInterface
+        public String getAiConfig() {
+            JSONObject result = new JSONObject();
+            try {
+                SharedPreferences prefs = context.getSharedPreferences(AI_PREFS, Context.MODE_PRIVATE);
+                result.put("ok", true)
+                        .put("preset", prefs.getString("ai_preset", "custom"))
+                        .put("baseUrl", prefs.getString("ai_base_url", ""))
+                        .put("model", prefs.getString("ai_model", ""))
+                        .put("temperature", prefs.getString("ai_temperature", "1"))
+                        .put("maxTokens", prefs.getInt("ai_max_tokens", 4096))
+                        .put("hasKey", !getStoredAiKey().isEmpty());
+            } catch (Exception error) {
+                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
+            }
+            return result.toString();
+        }
+
+        @JavascriptInterface
+        public String saveAiConfig(String configJson, String apiKey) {
+            JSONObject result = new JSONObject();
+            try {
+                JSONObject config = new JSONObject(configJson);
+                String baseUrl = clean(config.optString("baseUrl", ""), 200);
+                String model = clean(config.optString("model", ""), 100);
+                validateAiEndpoint(baseUrl);
+                if (model.isEmpty()) throw new Exception("模型名称不能为空");
+                SharedPreferences.Editor editor = context.getSharedPreferences(AI_PREFS, Context.MODE_PRIVATE).edit()
+                        .putString("ai_preset", clean(config.optString("preset", "custom"), 30))
+                        .putString("ai_base_url", baseUrl)
+                        .putString("ai_model", model)
+                        .putString("ai_temperature", config.optString("temperature", "1"))
+                        .putInt("ai_max_tokens", Math.max(256, Math.min(384000, config.optInt("maxTokens", 4096))));
+                if (!"-".equals(apiKey)) {
+                    if (apiKey != null && !apiKey.trim().isEmpty()) storeAiKey(apiKey.trim());
+                } else {
+                    clearStoredAiKey();
+                }
+                if (!editor.commit()) throw new Exception("AI 设置保存失败");
+                result.put("ok", true).put("hasKey", !getStoredAiKey().isEmpty());
+            } catch (Exception error) {
+                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
+            }
+            return result.toString();
+        }
+
+        @JavascriptInterface
+        public String aiChatRequest(String requestId, String urlSpec, String bodyJson) {
+            JSONObject result = new JSONObject();
+            try {
+                startAiStream(requestId, urlSpec, bodyJson);
+                result.put("ok", true);
+            } catch (Exception error) {
+                aiError(requestId, 0, safeMessage(error));
+                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
+            }
+            return result.toString();
+        }
+
+        @JavascriptInterface
+        public String aiModelsRequest(String requestId, String urlSpec) {
+            JSONObject result = new JSONObject();
+            try {
+                startAiModelsFetch(requestId, urlSpec);
+                result.put("ok", true);
+            } catch (Exception error) {
+                aiModelsReply(requestId, false, "[]", safeMessage(error));
+                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
+            }
+            return result.toString();
+        }
+
+        @JavascriptInterface
+        public String aiCancel(String requestId) {
+            HttpURLConnection connection;
+            synchronized (aiConnections) { connection = aiConnections.remove(requestId); }
+            if (connection != null) connection.disconnect();
+            return "{\"ok\":true}";
+        }
+
+        private void startAiStream(final String requestId, final String urlSpec, final String bodyJson) throws Exception {
+            final URL url = validateAiEndpoint(urlSpec);
+            final String apiKey = getStoredAiKey();
+            if (apiKey.isEmpty()) throw new IllegalArgumentException("尚未配置 API Key");
+            new Thread(() -> {
+                HttpURLConnection connection = null;
+                try {
+                    connection = (HttpURLConnection) url.openConnection();
+                    synchronized (aiConnections) { aiConnections.put(requestId, connection); }
+                    connection.setConnectTimeout(15000);
+                    connection.setReadTimeout(120000);
+                    connection.setRequestMethod("POST");
+                    connection.setDoOutput(true);
+                    connection.setRequestProperty("Content-Type", "application/json");
+                    connection.setRequestProperty("Accept", "text/event-stream");
+                    connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+                    try (OutputStream output = connection.getOutputStream()) {
+                        output.write(bodyJson.getBytes(StandardCharsets.UTF_8));
+                    }
+                    int status = connection.getResponseCode();
+                    if (status != HttpURLConnection.HTTP_OK) {
+                        String body = readCapped(status >= 400 ? connection.getErrorStream() : connection.getInputStream(), 4096);
+                        aiError(requestId, status, body.isEmpty() ? ("HTTP " + status) : body);
+                        return;
+                    }
+                    streamToJs(requestId, connection.getInputStream());
+                    aiDone(requestId);
+                } catch (Exception error) {
+                    aiError(requestId, 0, safeMessage(error));
+                } finally {
+                    synchronized (aiConnections) { aiConnections.remove(requestId); }
+                    if (connection != null) connection.disconnect();
+                }
+            }, "ai-chat-" + requestId).start();
+        }
+
+        private void startAiModelsFetch(final String requestId, final String urlSpec) throws Exception {
+            final URL url = validateAiEndpoint(urlSpec);
+            final String apiKey = getStoredAiKey();
+            if (apiKey.isEmpty()) throw new IllegalArgumentException("尚未配置 API Key");
+            new Thread(() -> {
+                HttpURLConnection connection = null;
+                try {
+                    connection = (HttpURLConnection) url.openConnection();
+                    connection.setConnectTimeout(15000);
+                    connection.setReadTimeout(30000);
+                    connection.setRequestProperty("Accept", "application/json");
+                    connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+                    int status = connection.getResponseCode();
+                    if (status != HttpURLConnection.HTTP_OK) {
+                        String body = readCapped(status >= 400 ? connection.getErrorStream() : connection.getInputStream(), 4096);
+                        aiModelsReply(requestId, false, "[]", body.isEmpty() ? ("HTTP " + status) : body);
+                        return;
+                    }
+                    aiModelsReply(requestId, true, readCapped(connection.getInputStream(), 65536), "");
+                } catch (Exception error) {
+                    aiModelsReply(requestId, false, "[]", safeMessage(error));
+                } finally {
+                    if (connection != null) connection.disconnect();
+                }
+            }, "ai-models-" + requestId).start();
+        }
+
+        private void streamToJs(String requestId, InputStream input) throws Exception {
+            StringBuilder pending = new StringBuilder();
+            long total = 0;
+            long lastFlush = System.currentTimeMillis();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
+                char[] buffer = new char[1024];
+                int count;
+                while ((count = reader.read(buffer)) != -1) {
+                    pending.append(buffer, 0, count);
+                    total += count;
+                    if (total > 2_000_000L) throw new Exception("响应超过 2 MB 上限");
+                    long now = System.currentTimeMillis();
+                    if (pending.length() >= 512 || now - lastFlush >= 200) {
+                        aiChunk(requestId, pending.toString());
+                        pending.setLength(0);
+                        lastFlush = now;
+                    }
+                }
+            }
+            if (pending.length() > 0) aiChunk(requestId, pending.toString());
+        }
+
+        private void aiChunk(String requestId, String text) {
+            String script = "window.onAiChunk(" + JSONObject.quote(requestId) + "," + JSONObject.quote(text) + ")";
+            webView.post(() -> webView.evaluateJavascript(script, null));
+        }
+
+        private void aiDone(String requestId) {
+            String script = "window.onAiDone(" + JSONObject.quote(requestId) + ")";
+            webView.post(() -> webView.evaluateJavascript(script, null));
+        }
+
+        private void aiError(String requestId, int status, String message) {
+            String script = "window.onAiError(" + JSONObject.quote(requestId) + "," + status + "," + JSONObject.quote(message) + ")";
+            webView.post(() -> webView.evaluateJavascript(script, null));
+        }
+
+        private void aiModelsReply(String requestId, boolean ok, String dataJson, String error) {
+            String payload = "{\"ok\":" + ok + ",\"data\":" + (ok ? dataJson : "[]") + ",\"error\":" + JSONObject.quote(error) + "}";
+            String script = "window.onAiModels(" + JSONObject.quote(requestId) + "," + JSONObject.quote(payload) + ")";
+            webView.post(() -> webView.evaluateJavascript(script, null));
+        }
+
+        private URL validateAiEndpoint(String spec) throws Exception {
+            String cleaned = spec == null ? "" : spec.trim();
+            if (cleaned.isEmpty()) throw new Exception("接口地址为空");
+            URL url = new URL(cleaned);
+            String protocol = url.getProtocol() == null ? "" : url.getProtocol().toLowerCase(Locale.ROOT);
+            String host = url.getHost() == null ? "" : url.getHost().toLowerCase(Locale.ROOT);
+            if (!"https".equals(protocol) && !("http".equals(protocol) && isPrivateHost(host))) {
+                throw new Exception("仅允许 HTTPS 接口或局域网 HTTP 地址");
+            }
+            return url;
+        }
+
+        private boolean isPrivateHost(String host) {
+            if ("localhost".equals(host) || host.equals("127.0.0.1") || host.endsWith(".local")
+                    || host.startsWith("192.168.") || host.startsWith("10.")) return true;
+            String[] parts = host.split("\\.");
+            if (parts.length < 2 || !"172".equals(parts[0])) return false;
+            try {
+                int second = Integer.parseInt(parts[1]);
+                return second >= 16 && second <= 31;
+            } catch (NumberFormatException error) {
+                return false;
+            }
+        }
+
+        private String getStoredAiKey() {
+            SharedPreferences prefs = context.getSharedPreferences(AI_PREFS, Context.MODE_PRIVATE);
+            String cipherText = prefs.getString(AI_CIPHER_KEY, null);
+            String iv = prefs.getString(AI_IV_KEY, null);
+            if (cipherText == null || iv == null) return "";
+            try {
+                Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                cipher.init(Cipher.DECRYPT_MODE, aiKeyEntry(), new GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)));
+                return new String(cipher.doFinal(Base64.decode(cipherText, Base64.NO_WRAP)), StandardCharsets.UTF_8);
+            } catch (Exception error) {
+                prefs.edit().remove(AI_CIPHER_KEY).remove(AI_IV_KEY).apply();
+                return "";
+            }
+        }
+
+        private void storeAiKey(String plain) throws Exception {
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, aiKeyEntry());
+            byte[] encrypted = cipher.doFinal(plain.getBytes(StandardCharsets.UTF_8));
+            context.getSharedPreferences(AI_PREFS, Context.MODE_PRIVATE).edit()
+                    .putString(AI_CIPHER_KEY, Base64.encodeToString(encrypted, Base64.NO_WRAP))
+                    .putString(AI_IV_KEY, Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))
+                    .commit();
+        }
+
+        private void clearStoredAiKey() {
+            context.getSharedPreferences(AI_PREFS, Context.MODE_PRIVATE).edit()
+                    .remove(AI_CIPHER_KEY).remove(AI_IV_KEY).apply();
+        }
+
+        private SecretKey aiKeyEntry() throws Exception {
+            KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+            keyStore.load(null);
+            if (!keyStore.containsAlias(AI_KEY_ALIAS)) {
+                KeyGenParameterSpec spec = new KeyGenParameterSpec.Builder(AI_KEY_ALIAS,
+                        KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                        .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                        .setKeySize(256)
+                        .build();
+                KeyGenerator generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
+                generator.init(spec);
+                generator.generateKey();
+            }
+            return ((KeyStore.SecretKeyEntry) keyStore.getEntry(AI_KEY_ALIAS, null)).getSecretKey();
+        }
+
+        private String readCapped(InputStream input, int limit) throws Exception {
+            if (input == null) return "";
+            try (InputStream source = input; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[2048];
+                int count;
+                while ((count = source.read(buffer)) != -1 && output.size() < limit) {
+                    output.write(buffer, 0, Math.min(count, limit - output.size()));
+                }
+                return output.toString(StandardCharsets.UTF_8.name());
+            }
         }
 
         @JavascriptInterface
@@ -366,6 +653,12 @@ public class MainActivity extends Activity {
             if (message == null || message.trim().isEmpty()) return "操作失败";
             message = message.replace('\n', ' ').replace('\r', ' ').trim();
             return message.length() > 240 ? message.substring(0, 240) : message;
+        }
+
+        private String clean(String value, int limit) {
+            if (value == null) return "";
+            String cleaned = value.replace('\n', ' ').replace('\r', ' ').trim();
+            return cleaned.length() > limit ? cleaned.substring(0, limit) : cleaned;
         }
 
         @JavascriptInterface

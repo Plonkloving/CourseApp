@@ -12,3 +12,4 @@ data/schedule.json
 outputs/
 __pycache__/
 tests/__pycache__/
+data/ai_config.json

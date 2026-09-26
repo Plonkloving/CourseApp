@@ -260,7 +260,8 @@
         <li>课程时间、教学周和地点仅供参考，请以学校最新通知为准。</li>
         <li>Excel 导入结果可能有误，导入后请逐项人工核对。</li>
         <li>课程和提醒设置均保存在本机；卸载应用可能清除这些数据。</li>
-        <li>应用仅在检查更新或下载新版时联网，不会上传本地课表。</li>
+        <li>AI 助手默认关闭：启用后，对话内容与所选课表上下文会发送到你自行配置的模型服务商，API Key 仅保存在本机。</li>
+        <li>应用仅在检查更新、下载新版或使用 AI 助手时联网，不会上传本地课表。</li>
       </ul>
       <button class="primary-button startup-primary" id="acceptUsageNotice" type="button">我已阅读并同意</button>
     </dialog>
@@ -280,6 +281,60 @@
       </div>
     </dialog>
 
+    <button id="aiBall" class="ai-ball hidden" type="button" aria-label="打开 AI 助手">✦</button>
+    <div id="aiCapsule" class="ai-capsule hidden" role="button" tabindex="0">
+      <span class="ai-capsule-dot"></span><span id="aiCapsuleText">AI 助手</span>
+    </div>
+    <section id="aiWindow" class="ai-window hidden" aria-label="AI 助手">
+      <header class="ai-head" id="aiHead">
+        <strong id="aiTitle">AI 助手</strong>
+        <div class="ai-head-actions">
+          <button class="ai-icon-btn" id="aiConfigBtn" type="button" aria-label="模型设置">⚙</button>
+          <button class="ai-icon-btn" id="aiMinimize" type="button" aria-label="最小化">—</button>
+          <button class="ai-icon-btn" id="aiClose" type="button" aria-label="收起">×</button>
+        </div>
+      </header>
+      <div id="aiChatView" class="ai-chat-view">
+        <p class="ai-privacy-note hidden" id="aiPrivacyNote">对话内容与所选课表上下文，将发送到你自行配置的模型服务商；API Key 仅保存在本机。<button class="ai-note-close" id="aiNoticeClose" type="button">知道了</button></p>
+        <div class="ai-messages" id="aiMessages"></div>
+        <div class="ai-input-bar">
+          <div class="ai-chips">
+            <button class="ai-chip" id="aiContextChip" type="button">附带课表</button>
+            <button class="ai-chip" id="aiThinkChip" type="button">深度思考</button>
+          </div>
+          <div class="ai-input-row">
+            <textarea id="aiInput" rows="1" maxlength="4000" placeholder="问问课表…"></textarea>
+            <button class="ai-send" id="aiSend" type="button" aria-label="发送">➤</button>
+          </div>
+        </div>
+      </div>
+      <div id="aiConfigView" class="ai-config-view hidden">
+        <label class="ai-field">预设
+          <select id="aiPreset">
+            <option value="deepseek">DeepSeek 官方</option>
+            <option value="openai">OpenAI</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="ollama">本地 Ollama</option>
+            <option value="custom">自定义 / 其他</option>
+          </select>
+        </label>
+        <label class="ai-field">接口地址（OpenAI 兼容）<input id="aiBaseUrl" placeholder="https://api.deepseek.com" /></label>
+        <label class="ai-field">模型名称<input id="aiModel" list="aiModelList" placeholder="deepseek-flash" /><datalist id="aiModelList"></datalist></label>
+        <label class="ai-field">API Key<input id="aiApiKey" type="password" placeholder="留空保持已保存的密钥" autocomplete="off" /></label>
+        <div class="ai-field-row">
+          <label class="ai-field">温度<input id="aiTemperature" type="number" step="0.1" min="0" max="2" value="1" /></label>
+          <label class="ai-field">max_tokens<input id="aiMaxTokens" type="number" min="256" step="256" value="4096" /></label>
+        </div>
+        <div class="ai-config-actions">
+          <button class="ai-btn" id="aiFetchModels" type="button">获取模型列表</button>
+          <button class="ai-btn danger" id="aiClearKey" type="button">清除密钥</button>
+          <button class="ai-btn primary" id="aiSaveConfig" type="button">保存设置</button>
+        </div>
+        <label class="ai-check"><input type="checkbox" id="aiBallVisible" checked /> 显示悬浮球</label>
+        <p class="ai-config-status" id="aiConfigStatus"></p>
+      </div>
+    </section>
+
     <div class="toast" id="toast" role="status"></div>
     <div class="boot-error hidden" id="bootError" role="alert">
       课程表脚本未能启动。请安装最新版本；如果问题仍然存在，请提供手机型号和系统版本。
@@ -297,5 +352,6 @@
     <script src="./vendor/xlsx.full.min.js" defer></script>
     <script src="./excel-import.js" defer></script>
     <script src="./app.js" defer></script>
+    <script src="./ai-assistant.js" defer></script>
   </body>
 </html>

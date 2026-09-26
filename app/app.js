@@ -1,7 +1,7 @@
 const DAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"];
 const SHORT_DAYS = ["一", "二", "三", "四", "五", "六", "日"];
 const DEFAULT_COLOR = "#3157A4";
-const USAGE_NOTICE_VERSION = "3";
+const USAGE_NOTICE_VERSION = "4";
 const USAGE_NOTICE_STORAGE_KEY = "course-app-usage-notice";
 const IGNORED_UPDATE_STORAGE_KEY = "course-app-ignored-update";
 

@@ -4,11 +4,12 @@
 
 ## Android 离线安装版
 
-安装包位于 `outputs/CourseSchedule-1.5.1.apk`，支持 Android 6.0 及以上系统。将 APK 传到手机后直接安装即可，不需要电脑、Wi-Fi 或服务器。
+安装包位于 `outputs/CourseSchedule-1.6.0.apk`，支持 Android 6.0 及以上系统。将 APK 传到手机后直接安装即可，不需要电脑、Wi-Fi 或服务器。
 
 - 安装包只包含空白课程表，不内置示例、真实课表或原始 Excel 数据。
 - 手机上新增、修改、删除的课程保存在应用私有空间。
 - 界面采用轻量液态玻璃风格，支持深色模式、减少动画设置，并为不支持背景模糊的 WebView 提供纯色降级。
+- 应用内提供可选的“AI 助手”悬浮球：用户自行配置任意 OpenAI 兼容接口（内置 DeepSeek 官方等预设模板）后，可带着本机课表上下文提问，回答流式显示；功能默认关闭，API Key 加密保存在本机，不进入仓库、备份或日志。
 - 可切换到“周课表”查看整周课程网格：行是节次、列是星期一至星期日，整周一屏可见；连堂课自动跨节合并，今天所在列高亮，点击课程卡片可直接修改安排。周末无课时自动折叠为 5 列，也可用“5天/7天”按钮切换。
 - 可在“课程管理”中把外观切换为跟随系统、浅色或深色；深色模式下系统状态栏、导航栏与页面同步变色。
 - 可切换到“月课表”查看整月课程标记，点击日期后通过弹窗查看当天课程详情。
@@ -44,11 +45,12 @@
 - 仓库、Android APK 和 iOS IPA 均不包含课程示例、真实课程、地点或原始课表文件。
 - 首次安装显示空课表，课程只能由使用者在本机新增或主动导入 Excel。
 - Excel 文件仅在本机解析；课程提醒规则也只保存在本机。
+- AI 助手完全由使用者自带密钥（BYOK）：对话内容与所选课表上下文只发送到用户自己配置的接口地址；Android 端密钥经 AndroidKeyStore 加密存储，电脑浏览器版密钥保存在本机 `data/ai_config.json`（已被 Git 忽略），手机浏览器只经电脑本机代理转发消息、接触不到密钥。
 - `data/schedule.json` 是电脑浏览器版本运行后产生的本机数据文件，已被 Git 忽略，不参与移动端构建。
 
 ## 构建与发布注意事项
 
-- 应用 ID：`com.local.courseschedule`；当前 Android 版本：`1.5.1`（versionCode 15）。
+- 应用 ID：`com.local.courseschedule`；当前 Android 版本：`1.6.0`（versionCode 16）。
 - 更新源配置为 GitHub 仓库 `Plonkloving/CourseApp`，Release 中需至少包含一个 `.apk` 文件。
 - `android/signing/`、`android/keystore.properties`、真实 Excel 和真实课程数据不得上传公开仓库；发布新版必须继续使用原签名。
 - Excel 解析使用随 APK 打包的 SheetJS CE 0.20.3，许可证位于 `app/vendor/SheetJS-LICENSE.txt`。

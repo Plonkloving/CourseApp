@@ -19,6 +19,7 @@ let resolveNoticeAcceptance;
 let weekGridFiveDays = localStorage.getItem("course-app-week-days") !== "7";
 let manageExpanded = new Set();
 let manageFilterDay = 0;
+let manageSettingsOpen = false;
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -32,6 +33,7 @@ const elements = {
   dayScheduleDialog: $("#dayScheduleDialog"), dayScheduleMeta: $("#dayScheduleMeta"), dayScheduleTitle: $("#dayScheduleTitle"), dayScheduleCourses: $("#dayScheduleCourses"),
   manageView: $("#manageView"), previousWeek: $("#previousWeek"), nextWeek: $("#nextWeek"),
   manageDayChips: $("#manageDayChips"), manageToggleAll: $("#manageToggleAll"),
+  manageSettingsToggle: $("#manageSettingsToggle"), semesterSettings: $("#semesterSettings"),
   todayButton: $("#todayButton"), weekSelect: $("#weekSelect"), courseDialog: $("#courseDialog"), courseForm: $("#courseForm"),
   deleteCourse: $("#deleteCourse"), formError: $("#formError"), toast: $("#toast"),
   infoDialog: $("#infoDialog"), lanUrls: $("#lanUrls"), excelFile: $("#excelFile"),
@@ -961,6 +963,14 @@ function bindEvents() {
     const key = head.dataset.groupKey;
     if (manageExpanded.has(key)) manageExpanded.delete(key); else manageExpanded.add(key);
     renderManageList();
+    const rendered = elements.manageList.querySelector(`[data-group-key="${CSS.escape(key)}"]`);
+    rendered?.scrollIntoView({block: "nearest", behavior: "smooth"});
+  });
+  elements.manageSettingsToggle.addEventListener("click", () => {
+    manageSettingsOpen = !manageSettingsOpen;
+    elements.manageSettingsToggle.classList.toggle("open", manageSettingsOpen);
+    elements.manageSettingsToggle.setAttribute("aria-expanded", String(manageSettingsOpen));
+    elements.semesterSettings.classList.toggle("hidden", !manageSettingsOpen);
   });
   elements.manageDayChips.addEventListener("click", (event) => {
     const chip = event.target.closest("[data-day]");

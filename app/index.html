@@ -107,12 +107,16 @@
               <input id="excelFile" class="hidden" type="file" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
             </div>
           </div>
-          <p class="manage-note">可导入学校“节次 × 星期”格式的 .xls 或 .xlsx 文件。导入会沿用下方日期设置并替换当前课程；表格仅在本机解析。</p>
+          <p class="manage-note">导入“节次 × 星期”格式的 .xls/.xlsx 课表，仅在本机解析并替换当前课程。</p>
           <div class="manage-filters">
             <div class="manage-day-chips" id="manageDayChips" role="group" aria-label="按星期筛选"></div>
             <button class="text-button" id="manageToggleAll" type="button">全部展开</button>
           </div>
-          <div class="semester-settings">
+          <button class="manage-settings-toggle" id="manageSettingsToggle" type="button" aria-expanded="false">
+            <span>学期设置与外观</span>
+            <span class="manage-caret">›</span>
+          </button>
+          <div class="semester-settings hidden" id="semesterSettings">
             <label for="weekOneStart">
               <span>第一教学周基准日</span>
               <input id="weekOneStart" type="date" />

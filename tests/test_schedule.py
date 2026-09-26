@@ -73,7 +73,7 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("prefers-color-scheme: dark", html)
         self.assertIn("prefers-reduced-motion: reduce", styles)
         self.assertIn('name="theme-color" content="#243F7A"', html)
-        self.assertIn('CACHE_NAME = "course-app-v11"', service_worker)
+        self.assertIn('CACHE_NAME = "course-app-v12"', service_worker)
 
     def test_android_asset_entry_uses_classic_script(self):
         html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
@@ -300,15 +300,20 @@ class ScheduleBehaviorTests(unittest.TestCase):
         styles = (ROOT / "app" / "styles.css").read_text(encoding="utf-8")
         self.assertIn('id="manageDayChips"', html)
         self.assertIn('id="manageToggleAll"', html)
+        self.assertIn('id="manageSettingsToggle"', html)
+        self.assertIn('id="semesterSettings"', html)
         self.assertIn("function manageGroupKey(", script)
         self.assertIn("manageExpanded.has(manageGroupKey(", script)
         self.assertIn("manageFilterDay", script)
+        self.assertIn("manageSettingsOpen", script)
+        self.assertIn("scrollIntoView", script)
         self.assertIn('data-group-key="${escapeHtml(group.key)}"', script)
         self.assertIn("manage-group-head", script)
         self.assertIn("周${SHORT_DAYS[session.day - 1]} 第${session.periodStart}–${session.periodEnd}节", script)
         self.assertIn("manage-group-head", styles)
         self.assertIn(".manage-day-chip", styles)
         self.assertIn(".manage-group {", styles)
+        self.assertIn(".manage-settings-toggle", styles)
 
     def test_state_validation(self):
         server.validate_state(server.EMPTY_STATE)

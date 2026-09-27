@@ -341,6 +341,7 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("updateNextClassShortcut", activity)
         self.assertIn("updateNextClassShortcut", scheduler)
         self.assertIn("ShortcutManagerCompat", scheduler)
+        self.assertIn("Intent.ACTION_MAIN", scheduler)
         self.assertIn("courseName", scheduler)
         self.assertIn("window.onNativeShortcut", script)
         self.assertIn("function applyShortcutTarget(", script)

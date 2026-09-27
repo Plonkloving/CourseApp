@@ -468,7 +468,9 @@
   function scrollMessages() { el.aiMessages.scrollTop = el.aiMessages.scrollHeight; }
 
   function updateSendButton() {
-    el.aiSend.textContent = ai.streaming ? "■" : "➤";
+    el.aiSend.innerHTML = ai.streaming
+      ? '<svg class="icon" aria-hidden="true"><use href="#i-stop"/></svg>'
+      : '<svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>';
     el.aiSend.classList.toggle("stop", ai.streaming);
     el.aiSend.setAttribute("aria-label", ai.streaming ? "停止" : "发送");
   }

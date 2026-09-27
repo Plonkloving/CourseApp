@@ -244,10 +244,10 @@ function courseCard(session, courseDate = dateFor(selectedWeek, selectedDay), ed
     <div class="course-accent"></div>
     <div class="course-content">
       <div class="course-topline"><span class="course-code">${escapeHtml(session.code || "自定义课程")}</span>${status ? `<span class="status-pill">${status}</span>` : ""}</div>
-      <h3>${escapeHtml(session.name)}</h3>
-      <div class="detail-row"><span class="detail-icon">◷</span><span>${periodTime(session)} · 第${session.periodStart}–${session.periodEnd}节</span></div>
-      <div class="detail-row"><span class="detail-icon">⌖</span><span>${escapeHtml(session.location)}${session.campus ? `<br>${escapeHtml(session.campus)}` : ""}</span></div>
-      ${session.teacher ? `<div class="detail-row"><span class="detail-icon">人</span><span>${escapeHtml(session.teacher)}</span></div>` : ""}
+      <h3><span class="course-dot" aria-hidden="true"></span>${escapeHtml(session.name)}</h3>
+      <div class="detail-row"><span class="detail-icon"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg></span><span>${periodTime(session)} · 第${session.periodStart}–${session.periodEnd}节</span></div>
+      <div class="detail-row"><span class="detail-icon"><svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg></span><span>${escapeHtml(session.location)}${session.campus ? `<br>${escapeHtml(session.campus)}` : ""}</span></div>
+      ${session.teacher ? `<div class="detail-row"><span class="detail-icon"><svg class="icon" aria-hidden="true"><use href="#i-user"/></svg></span><span>${escapeHtml(session.teacher)}</span></div>` : ""}
       ${editable ? `<div class="card-actions"><button class="text-button edit-course" data-id="${escapeHtml(session.id)}">修改此安排 →</button></div>` : ""}
     </div>
   </article>`;
@@ -508,6 +508,9 @@ async function submitCourse(event) {
       location: String(form.get("location")).trim(), campus: String(form.get("campus")).trim(),
       notes: String(form.get("notes")).trim(), color: previous?.color || DEFAULT_COLOR
     };
+    if (!previous && window.CourseExcelImport?.colorFor) {
+      session.color = CourseExcelImport.colorFor(session.name || session.code || "课程");
+    }
     if (previous) state.sessions = state.sessions.map((item) => item.id === existingId ? session : item);
     else state.sessions.push(session);
     await saveState(previous ? "课程修改已保存" : "课程已添加");

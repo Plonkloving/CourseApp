@@ -21,6 +21,22 @@
     <title>我的课程表</title>
   </head>
   <body>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-cal-day" viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/><rect x="8" y="13" width="4" height="4" rx="1" fill="currentColor" stroke="none"/></symbol>
+        <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></symbol>
+        <symbol id="i-cal-month" viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/><circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/><circle cx="13" cy="14" r="1.1" fill="currentColor" stroke="none"/><circle cx="17" cy="14" r="1.1" fill="currentColor" stroke="none"/><circle cx="9" cy="17.5" r="1.1" fill="currentColor" stroke="none"/></symbol>
+        <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4.5 19.5l1-3.8L15.8 5.4a1.9 1.9 0 0 1 2.7 0l.6.6a1.9 1.9 0 0 1 0 2.7L8.8 19 4.5 19.5z"/></symbol>
+        <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6.3 17h11.4c-1.2-1.4-1.9-2.3-1.9-5.2a4.8 4.8 0 0 0-9.6 0c0 2.9-.7 3.8-1.9 5.2z"/><path d="M10 19.6a2.1 2.1 0 0 0 4 0"/></symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+        <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.2-6.5-10a6.5 6.5 0 0 1 13 0c0 4.8-6.5 10-6.5 10z"/><circle cx="12" cy="11" r="2.2"/></symbol>
+        <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 19.5c1-3.2 3.5-4.8 6.5-4.8s5.5 1.6 6.5 4.8"/></symbol>
+        <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2.8l2.1 6.3 6.3 2.1-6.3 2.1-2.1 6.3-2.1-6.3-6.3-2.1 6.3-2.1 2.1-6.3z" fill="currentColor" stroke="none"/></symbol>
+        <symbol id="i-send" viewBox="0 0 24 24"><path d="M4.2 11.2L19.5 4.8l-4.2 14.4-3.4-5.5-7.7-2.5z" fill="currentColor" stroke="none"/></symbol>
+        <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none"/></symbol>
+        <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3.5v2.4M12 18.1v2.4M3.5 12h2.4M18.1 12h2.4M6 6l1.7 1.7M16.3 16.3L18 18M18 6l-1.7 1.7M7.7 16.3L6 18"/></symbol>
+      </defs>
+    </svg>
     <div class="app-shell">
       <header class="topbar">
         <div>
@@ -187,11 +203,11 @@
       </main>
 
       <nav class="bottom-nav" aria-label="主导航">
-        <button class="nav-item active" data-view="schedule"><span>▤</span>日课表</button>
-        <button class="nav-item" data-view="week"><span>▦</span>周课表</button>
-        <button class="nav-item" data-view="month"><span>▩</span>月课表</button>
-        <button class="nav-item" data-view="manage"><span>✎</span>课程管理</button>
-        <button class="nav-item android-only hidden" data-view="notification"><span>◷</span>课程提醒</button>
+        <button class="nav-item active" data-view="schedule"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-cal-day"/></svg></span>日课表</button>
+        <button class="nav-item" data-view="week"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg></span>周课表</button>
+        <button class="nav-item" data-view="month"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-cal-month"/></svg></span>月课表</button>
+        <button class="nav-item" data-view="manage"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></span>课程管理</button>
+        <button class="nav-item android-only hidden" data-view="notification"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg></span>课程提醒</button>
       </nav>
     </div>
 
@@ -289,7 +305,7 @@
       </div>
     </dialog>
 
-    <button id="aiBall" class="ai-ball hidden" type="button" aria-label="打开 AI 助手">✦</button>
+    <button id="aiBall" class="ai-ball hidden" type="button" aria-label="打开 AI 助手"><svg class="icon" aria-hidden="true"><use href="#i-spark"/></svg></button>
     <div id="aiCapsule" class="ai-capsule hidden" role="button" tabindex="0">
       <span class="ai-capsule-dot"></span><span id="aiCapsuleText">AI 助手</span>
     </div>
@@ -297,7 +313,7 @@
       <header class="ai-head" id="aiHead">
         <strong id="aiTitle">AI 助手</strong>
         <div class="ai-head-actions">
-          <button class="ai-icon-btn" id="aiConfigBtn" type="button" aria-label="模型设置">⚙</button>
+          <button class="ai-icon-btn" id="aiConfigBtn" type="button" aria-label="模型设置"><svg class="icon" aria-hidden="true"><use href="#i-gear"/></svg></button>
           <button class="ai-icon-btn" id="aiMinimize" type="button" aria-label="最小化">—</button>
           <button class="ai-icon-btn" id="aiClose" type="button" aria-label="收起">×</button>
         </div>
@@ -312,7 +328,7 @@
           </div>
           <div class="ai-input-row">
             <textarea id="aiInput" rows="1" maxlength="4000" placeholder="问问课表…"></textarea>
-            <button class="ai-send" id="aiSend" type="button" aria-label="发送">➤</button>
+            <button class="ai-send" id="aiSend" type="button" aria-label="发送"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button>
           </div>
         </div>
       </div>

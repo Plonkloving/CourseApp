@@ -107,6 +107,6 @@
     };
   }
 
-  root.CourseExcelImport = {parseWorksheet, findHeader, splitCourseBlocks, parseEntry};
+  root.CourseExcelImport = {parseWorksheet, findHeader, splitCourseBlocks, parseEntry, colorFor};
   if (typeof module !== "undefined" && module.exports) module.exports = root.CourseExcelImport;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -73,7 +73,7 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("prefers-color-scheme: dark", html)
         self.assertIn("prefers-reduced-motion: reduce", styles)
         self.assertIn('name="theme-color" content="#243F7A"', html)
-        self.assertIn('CACHE_NAME = "course-app-v13"', service_worker)
+        self.assertIn('CACHE_NAME = "course-app-v14"', service_worker)
 
     def test_android_asset_entry_uses_classic_script(self):
         html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
@@ -348,6 +348,26 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn('target === "week"', script)
         self.assertIn('target === "add"', script)
         self.assertIn("getLaunchShortcut", script)
+
+    def test_visual_design_tokens_and_icons(self):
+        html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "app" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn("--radius-s", styles)
+        self.assertIn("--radius-m", styles)
+        self.assertIn("--radius-l", styles)
+        self.assertIn("--text-secondary", styles)
+        self.assertNotIn("letter-spacing: .09em", styles)
+        self.assertNotIn("◷", script)
+        self.assertNotIn("⌖", script)
+        self.assertIn('id="i-cal-day"', html)
+        self.assertIn('id="i-grid"', html)
+        self.assertIn('id="i-bell"', html)
+        self.assertIn('href="#i-clock"', script)
+        self.assertIn('href="#i-pin"', script)
+        self.assertIn('href="#i-user"', script)
+        self.assertIn("course-dot", script)
+        self.assertIn("CourseExcelImport.colorFor", script)
 
     def test_state_validation(self):
         server.validate_state(server.EMPTY_STATE)

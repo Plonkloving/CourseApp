@@ -84,6 +84,7 @@
           <div class="week-view-actions">
             <button class="today-button" id="weekGridToday" type="button">回到本周</button>
             <button class="today-button" id="weekGridDays" type="button">5天</button>
+            <button class="today-button" id="exportWeekImage" type="button">导出图片</button>
           </div>
           <div class="week-grid-scroll">
             <div class="week-grid" id="weekGrid" aria-label="整周课程网格"></div>
@@ -119,6 +120,7 @@
               <h2>课程管理</h2>
             </div>
             <div class="manage-actions">
+              <button class="secondary-button compact" id="exportIcs" type="button">导出日历</button>
               <button class="secondary-button compact" id="importExcel" type="button">导入 Excel</button>
               <button class="primary-button compact" id="addCourse" type="button">＋ 新增</button>
               <input id="excelFile" class="hidden" type="file" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />

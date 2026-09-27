@@ -37,6 +37,7 @@ const elements = {
   manageDayChips: $("#manageDayChips"), manageToggleAll: $("#manageToggleAll"),
   manageSettingsToggle: $("#manageSettingsToggle"), semesterSettings: $("#semesterSettings"),
   backupFile: $("#backupFile"), exportBackupBtn: $("#exportBackup"), importBackupBtn: $("#importBackup"),
+  exportIcsBtn: $("#exportIcs"), exportWeekImageBtn: $("#exportWeekImage"),
   eventCountdown: $("#eventCountdown"), periodEditor: $("#periodEditor"), eventEditor: $("#eventEditor"),
   semesterSelect: $("#semesterSelect"), addSemester: $("#addSemester"), deleteSemester: $("#deleteSemester"),
   todayButton: $("#todayButton"), weekSelect: $("#weekSelect"), courseDialog: $("#courseDialog"), courseForm: $("#courseForm"),
@@ -1034,8 +1035,9 @@ function exportBackup() {
     events: state.events || [], activeSemesterId: state.activeSemesterId, semesters: state.semesters || []
   };
   const json = JSON.stringify(payload, null, 2);
-  if (window.CourseAppNative?.exportBackup) {
-    const result = JSON.parse(window.CourseAppNative.exportBackup(json));
+  if (window.CourseAppNative?.exportFile) {
+    const result = JSON.parse(window.CourseAppNative.exportFile(toBase64Utf8(json), "application/json",
+      `CourseSchedule-backup-${localDateKey(new Date()).replace(/-/g, "")}.json`));
     if (!result.ok) showToast(result.error || "导出失败");
     return;
   }
@@ -1160,6 +1162,276 @@ function findConflicts(session) {
     && item.day === session.day
     && item.weeks.some((week) => session.weeks.includes(week))
     && item.periodStart <= session.periodEnd && session.periodStart <= item.periodEnd);
+}
+
+function toBase64Utf8(text) {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary);
+}
+
+function icsEscape(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+}
+
+function icsFold(line) {
+  const encoder = new TextEncoder();
+  if (encoder.encode(line).length <= 74) return line;
+  let out = "";
+  let current = "";
+  for (const char of line) {
+    if (encoder.encode(current + char).length > 72) {
+      out += current + "\r\n ";
+      current = "";
+    }
+    current += char;
+  }
+  return out + current;
+}
+
+function icsWeekRuns(weeks) {
+  const sorted = [...new Set(weeks)].sort((a, b) => a - b);
+  const runs = [];
+  for (const week of sorted) {
+    const last = runs[runs.length - 1];
+    const step = last ? week - last.last : 0;
+    if (last && (last.step === null || step === last.step) && (step === 1 || step === 2)) {
+      if (last.step === null) last.step = step;
+      last.last = week;
+      last.weeks.push(week);
+    } else {
+      runs.push({first: week, last: week, step: null, weeks: [week]});
+    }
+  }
+  return runs.map((run) => ({first: run.first, count: run.weeks.length, step: run.step || 1}));
+}
+
+function stampUTC() {
+  const now = new Date();
+  return `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, "0")}${String(now.getUTCDate()).padStart(2, "0")}T${String(now.getUTCHours()).padStart(2, "0")}${String(now.getUTCMinutes()).padStart(2, "0")}${String(now.getUTCSeconds()).padStart(2, "0")}Z`;
+}
+
+function buildIcs() {
+  if (!state.sessions.length) throw new Error("当前学期没有课程");
+  const pad2 = (value) => String(value).padStart(2, "0");
+  const byDay = ["", "MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+  const weekOne = parseLocalDate(state.semester.weekOneStart);
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//CourseSchedule//CN", "CALSCALE:GREGORIAN"];
+  let eventCount = 0;
+  let skipped = 0;
+  for (const session of state.sessions) {
+    const startTime = (state.periods.find((p) => p.number === session.periodStart) || {}).start || "";
+    const endTime = (state.periods.find((p) => p.number === session.periodEnd) || {}).end || "";
+    if (!/^\d{1,2}:\d{2}$/.test(startTime) || !/^\d{1,2}:\d{2}$/.test(endTime)) {
+      skipped += 1;
+      continue;
+    }
+    for (const run of icsWeekRuns(session.weeks || [])) {
+      const firstDate = addDays(weekOne, (run.first - 1) * 7 + session.day - 1);
+      const compact = (date) => `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}`;
+      lines.push("BEGIN:VEVENT");
+      lines.push(`UID:${session.id}-${run.first}@courseapp.local`);
+      lines.push(`DTSTAMP:${stampUTC()}`);
+      lines.push(`DTSTART:${compact(firstDate)}T${startTime.replace(":", "")}00`);
+      lines.push(`DTEND:${compact(firstDate)}T${endTime.replace(":", "")}00`);
+      if (run.count > 1) lines.push(`RRULE:FREQ=WEEKLY;BYDAY=${byDay[session.day]};INTERVAL=${run.step};COUNT=${run.count}`);
+      lines.push(`SUMMARY:${icsEscape(session.name)}`);
+      if (session.location) lines.push(`LOCATION:${icsEscape(session.location)}`);
+      const description = [session.teacher ? `教师：${session.teacher}` : "", session.weekLabel || formatWeeks(session.weeks)]
+        .filter(Boolean).join("；");
+      if (description) lines.push(`DESCRIPTION:${icsEscape(description)}`);
+      lines.push("END:VEVENT");
+      eventCount += 1;
+    }
+  }
+  lines.push("END:VCALENDAR");
+  return {content: lines.map(icsFold).join("\r\n"), eventCount, skipped};
+}
+
+function exportIcs() {
+  let result;
+  try {
+    result = buildIcs();
+  } catch (error) {
+    return showToast(error.message);
+  }
+  showToast(`已生成 ${result.eventCount} 个日历事件${result.skipped ? `（跳过 ${result.skipped} 条无时间课程）` : ""}`);
+  const base64 = toBase64Utf8(result.content);
+  if (window.CourseAppNative?.exportFile) {
+    const saved = JSON.parse(window.CourseAppNative.exportFile(base64, "text/calendar", "CourseSchedule.ics"));
+    if (!saved.ok) showToast(saved.error || "导出失败");
+    return;
+  }
+  const blob = new Blob([result.content], {type: "text/calendar;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "CourseSchedule.ics";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+function wrapCanvasText(ctx, text, maxWidth, maxLines) {
+  const lines = [];
+  let current = "";
+  for (const char of String(text)) {
+    if (current && ctx.measureText(current + char).width > maxWidth) {
+      lines.push(current);
+      current = char;
+      if (lines.length === maxLines) return lines;
+    } else {
+      current += char;
+    }
+  }
+  if (current && lines.length < maxLines) lines.push(current);
+  return lines;
+}
+
+function drawWeekImage() {
+  const periods = weekGridPeriods();
+  const scale = 2;
+  const pad = 24;
+  const timeCol = 56;
+  const colWidth = 128;
+  const header = 56;
+  const rowHeight = 96;
+  const titleHeight = 64;
+  const width = pad * 2 + timeCol + colWidth * 7;
+  const height = pad * 2 + titleHeight + header + periods.length * rowHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+
+  const background = ctx.createLinearGradient(0, 0, width, height);
+  background.addColorStop(0, "#eaf0ff");
+  background.addColorStop(1, "#eef7f5");
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = "#18233f";
+  ctx.font = "700 22px 'Microsoft YaHei', sans-serif";
+  ctx.fillText(state.semester.name || "课程表", pad, pad + 26);
+  ctx.fillStyle = "#65738d";
+  ctx.font = "500 13px 'Microsoft YaHei', sans-serif";
+  ctx.fillText(`第 ${selectedWeek} 教学周 · ${formatDate(dateFor(selectedWeek, 1))} — ${formatDate(dateFor(selectedWeek, 7))}`, pad, pad + 48);
+
+  const gridTop = pad + titleHeight;
+  const today = new Date();
+  const todayInfo = teachingInfoForDate(today);
+  for (let day = 1; day <= 7; day += 1) {
+    const date = dateFor(selectedWeek, day);
+    const x = pad + timeCol + (day - 1) * colWidth;
+    ctx.fillStyle = todayInfo.day === day && todayInfo.week === selectedWeek ? "#31549c" : "rgba(255,255,255,.85)";
+    roundRectPath(ctx, x + 2, gridTop + 2, colWidth - 4, header - 8, 8);
+    ctx.fill();
+    ctx.fillStyle = todayInfo.day === day && todayInfo.week === selectedWeek ? "#ffffff" : "#18233f";
+    ctx.font = "800 14px 'Microsoft YaHei', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(`周${SHORT_DAYS[day - 1]}`, x + colWidth / 2, gridTop + 22);
+    ctx.font = "700 15px 'Microsoft YaHei', sans-serif";
+    ctx.fillText(`${date.getMonth() + 1}/${date.getDate()}`, x + colWidth / 2, gridTop + 42);
+    ctx.textAlign = "left";
+  }
+
+  const rowsTop = gridTop + header;
+  ctx.strokeStyle = "rgba(49,84,156,.18)";
+  ctx.lineWidth = 1;
+  for (let index = 0; index <= periods.length; index += 1) {
+    const y = rowsTop + index * rowHeight;
+    ctx.beginPath();
+    ctx.moveTo(pad + timeCol, y);
+    ctx.lineTo(width - pad, y);
+    ctx.stroke();
+  }
+  for (let day = 0; day <= 7; day += 1) {
+    const x = pad + timeCol + day * colWidth;
+    ctx.beginPath();
+    ctx.moveTo(x, rowsTop);
+    ctx.lineTo(x, rowsTop + periods.length * rowHeight);
+    ctx.stroke();
+  }
+
+  for (const period of periods) {
+    const y = rowsTop + (period.number - 1) * rowHeight;
+    ctx.fillStyle = "#18233f";
+    ctx.font = "800 13px 'Microsoft YaHei', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(`${period.number}`, pad + timeCol / 2, y + 34);
+    ctx.fillStyle = "#65738d";
+    ctx.font = "500 10px 'Microsoft YaHei', sans-serif";
+    if (period.start && period.end) {
+      ctx.fillText(period.start, pad + timeCol / 2, y + 52);
+      ctx.fillText(period.end, pad + timeCol / 2, y + 66);
+    }
+    ctx.textAlign = "left";
+  }
+
+  for (const session of state.sessions.filter((item) => (item.weeks || []).includes(selectedWeek))) {
+    const x = pad + timeCol + (session.day - 1) * colWidth + 4;
+    const y = rowsTop + (session.periodStart - 1) * rowHeight + 4;
+    const blockWidth = colWidth - 8;
+    const blockHeight = (session.periodEnd - session.periodStart + 1) * rowHeight - 8;
+    const color = session.color || DEFAULT_COLOR;
+    ctx.fillStyle = hexToRgba(color, 0.14);
+    roundRectPath(ctx, x, y, blockWidth, blockHeight, 10);
+    ctx.fill();
+    ctx.fillStyle = color;
+    roundRectPath(ctx, x, y, 4, blockHeight, 2);
+    ctx.fill();
+    ctx.fillStyle = "#18233f";
+    ctx.font = "700 13px 'Microsoft YaHei', sans-serif";
+    const nameLines = wrapCanvasText(ctx, session.name, blockWidth - 16, 3);
+    nameLines.forEach((line, index) => ctx.fillText(line, x + 10, y + 22 + index * 18));
+    let textY = y + 24 + nameLines.length * 18;
+    ctx.fillStyle = "#53656f";
+    ctx.font = "500 11px 'Microsoft YaHei', sans-serif";
+    const locationLines = session.location ? wrapCanvasText(ctx, session.location, blockWidth - 16, blockHeight > 120 ? 2 : 1) : [];
+    locationLines.forEach((line, index) => ctx.fillText(line, x + 10, textY + index * 15));
+    textY += locationLines.length * 15;
+    if (session.teacher && blockHeight > 150) {
+      ctx.fillText(session.teacher, x + 10, textY + 2);
+    }
+  }
+
+  ctx.fillStyle = "#65738d";
+  ctx.font = "500 10px 'Microsoft YaHei', sans-serif";
+  ctx.fillText("由 本地课程表 生成", pad, height - 8);
+  return canvas;
+}
+
+async function exportWeekImage() {
+  const canvas = drawWeekImage();
+  if (window.CourseAppNative?.exportFile) {
+    const result = JSON.parse(window.CourseAppNative.exportFile(canvas.toDataURL("image/png").split(",")[1], "image/png", `CourseSchedule-第${selectedWeek}周.png`));
+    if (!result.ok) showToast(result.error || "导出失败");
+    return;
+  }
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `CourseSchedule-第${selectedWeek}周.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast("周课表图片已生成");
 }
 
 window.onNativeShortcut = applyShortcutTarget;
@@ -1352,6 +1624,8 @@ function bindEvents() {
     if (manageSettingsOpen) refreshSettingsEditors();
   });
   elements.exportBackupBtn.addEventListener("click", exportBackup);
+  elements.exportIcsBtn.addEventListener("click", exportIcs);
+  elements.exportWeekImageBtn.addEventListener("click", exportWeekImage);
   elements.importBackupBtn.addEventListener("click", () => elements.backupFile.click());
   elements.backupFile.addEventListener("change", () => {
     importBackupFile(elements.backupFile.files[0]).finally(() => { elements.backupFile.value = ""; });

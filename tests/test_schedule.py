@@ -393,7 +393,8 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("daysUntil", scheduler)
         self.assertIn("weekdayOf", scheduler)
         self.assertIn("ACTION_CREATE_DOCUMENT", activity)
-        self.assertIn("BACKUP_EXPORT_REQUEST", activity)
+        self.assertIn("EXPORT_FILE_REQUEST", activity)
+        self.assertNotIn("BACKUP_EXPORT_REQUEST", activity)
         self.assertIn(".NextClassWidgetProvider", manifest)
         self.assertIn(".TodayWidgetProvider", manifest)
         self.assertIn("next_class_widget_info", manifest)
@@ -446,6 +447,20 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn(".day-axis", styles)
         self.assertIn(".day-block", styles)
         self.assertIn(".semester-switcher", styles)
+
+    def test_export_image_and_ics(self):
+        html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('id="exportWeekImage"', html)
+        self.assertIn('id="exportIcs"', html)
+        self.assertIn("function exportWeekImage()", script)
+        self.assertIn("function drawWeekImage()", script)
+        self.assertIn("function buildIcs()", script)
+        self.assertIn("function icsWeekRuns(", script)
+        self.assertIn("RRULE:FREQ=WEEKLY", script)
+        self.assertIn("DTSTART:", script)
+        self.assertIn("BEGIN:VCALENDAR", script)
+        self.assertIn("exportFile", script)
 
     def test_state_validation(self):
         server.validate_state(server.EMPTY_STATE)

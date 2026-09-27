@@ -54,14 +54,15 @@ import javax.crypto.spec.GCMParameterSpec;
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 1001;
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1004;
-    private static final int BACKUP_EXPORT_REQUEST = 1005;
+    private static final int EXPORT_FILE_REQUEST = 1005;
     private WebView webView;
     private NativeBridge nativeBridge;
     private ValueCallback<Uri[]> fileChooserCallback;
     private File pendingUpdate;
     private String pendingCourseDate = "";
     private String pendingShortcutTarget = "";
-    private String pendingBackupJson = "";
+    private byte[] pendingExportBytes = null;
+    private String pendingExportMime = "application/octet-stream";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -142,18 +143,18 @@ public class MainActivity extends Activity {
             fileChooserCallback = null;
             return;
         }
-        if (requestCode == BACKUP_EXPORT_REQUEST) {
-            String payload = pendingBackupJson;
-            pendingBackupJson = "";
-            if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        if (requestCode == EXPORT_FILE_REQUEST) {
+            byte[] payload = pendingExportBytes;
+            pendingExportBytes = null;
+            if (resultCode != RESULT_OK || data == null || data.getData() == null || payload == null) return;
             boolean ok = false;
-            String message = "备份已保存";
+            String message = "文件已保存";
             try (OutputStream output = getContentResolver().openOutputStream(data.getData())) {
                 if (output == null) throw new Exception("无法写入所选位置");
-                output.write(payload.getBytes(StandardCharsets.UTF_8));
+                output.write(payload);
                 ok = true;
             } catch (Exception error) {
-                message = "备份保存失败：" + error.getMessage();
+                message = "保存失败：" + error.getMessage();
             }
             String script = "window.onNativeBackupResult?.(" + ok + "," + JSONObject.quote(message) + ")";
             webView.post(() -> webView.evaluateJavascript(script, null));
@@ -691,20 +692,22 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String exportBackup(String json) {
+        public String exportFile(String base64, String mime, String filename) {
             JSONObject result = new JSONObject();
             try {
-                if (json == null || json.length() < 10 || json.length() > 2_000_000) throw new Exception("备份内容不合法");
-                pendingBackupJson = json;
+                byte[] bytes = Base64.decode(base64 == null ? "" : base64, Base64.NO_WRAP);
+                if (bytes.length < 10 || bytes.length > 8_000_000) throw new Exception("导出内容大小异常");
+                pendingExportBytes = bytes;
+                pendingExportMime = mime == null || mime.isEmpty() ? "application/octet-stream" : mime;
+                String safeName = filename == null || filename.trim().isEmpty() ? "CourseSchedule-export" : filename.trim();
                 Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("application/json");
-                intent.putExtra(Intent.EXTRA_TITLE, "CourseSchedule-backup-"
-                        + new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date()) + ".json");
-                webView.post(() -> startActivityForResult(intent, BACKUP_EXPORT_REQUEST));
+                intent.setType(pendingExportMime);
+                intent.putExtra(Intent.EXTRA_TITLE, safeName);
+                webView.post(() -> startActivityForResult(intent, EXPORT_FILE_REQUEST));
                 result.put("ok", true);
             } catch (Exception error) {
-                pendingBackupJson = "";
+                pendingExportBytes = null;
                 try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
             }
             return result.toString();

@@ -49,6 +49,7 @@
       <main>
         <section class="week-panel" id="scheduleView">
           <div class="term-status" id="termStatus"></div>
+          <p class="event-countdown hidden" id="eventCountdown" role="status"></p>
           <div class="week-toolbar">
             <button class="arrow-button" id="previousWeek" aria-label="上一周">‹</button>
             <label class="week-title" id="weekPicker">
@@ -157,6 +158,10 @@
               <button class="ai-btn" id="importBackup" type="button">导入备份</button>
               <input id="backupFile" class="hidden" type="file" accept=".json,application/json" />
             </div>
+            <p class="editor-title">节次时间</p>
+            <div id="periodEditor"></div>
+            <p class="editor-title">倒计时事件</p>
+            <div id="eventEditor"></div>
           </div>
           <div class="manage-list" id="manageList"></div>
         </section>

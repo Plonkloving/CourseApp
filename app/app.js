@@ -37,6 +37,7 @@ const elements = {
   manageDayChips: $("#manageDayChips"), manageToggleAll: $("#manageToggleAll"),
   manageSettingsToggle: $("#manageSettingsToggle"), semesterSettings: $("#semesterSettings"),
   backupFile: $("#backupFile"), exportBackupBtn: $("#exportBackup"), importBackupBtn: $("#importBackup"),
+  eventCountdown: $("#eventCountdown"), periodEditor: $("#periodEditor"), eventEditor: $("#eventEditor"),
   todayButton: $("#todayButton"), weekSelect: $("#weekSelect"), courseDialog: $("#courseDialog"), courseForm: $("#courseForm"),
   deleteCourse: $("#deleteCourse"), formError: $("#formError"), toast: $("#toast"),
   infoDialog: $("#infoDialog"), lanUrls: $("#lanUrls"), excelFile: $("#excelFile"),
@@ -171,6 +172,20 @@ function render() {
   renderWeekGrid();
   renderMonthView();
   renderManageList();
+  refreshSettingsEditors();
+}
+
+function nearestEventCountdown() {
+  if (!state || !Array.isArray(state.events) || !state.events.length) return "";
+  const today = parseLocalDate(localDateKey(new Date()));
+  const upcoming = state.events
+    .filter((item) => item && item.name && /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")))
+    .map((item) => ({name: String(item.name).slice(0, 30), target: parseLocalDate(item.date)}))
+    .filter((item) => item.target >= today)
+    .sort((a, b) => a.target - b.target)[0];
+  if (!upcoming) return "";
+  const days = Math.round((upcoming.target - today) / 86400000);
+  return days === 0 ? `「${upcoming.name}」就是今天！` : `距「${upcoming.name}」还有 ${days} 天`;
 }
 
 function renderTermStatus() {
@@ -187,7 +202,10 @@ function renderTermStatus() {
   } else {
     elements.termStatus.textContent = `${systemTime}｜当前为第 ${position.week} 教学周`;
   }
-  elements.todayButton.textContent = position.phase === "before" ? "查看开课日" : position.phase === "after" ? "查看学期末" : "回到今天";
+  elements.todayButton.textContent = position.phase === "before" ? "查看开课日" : position.phase === "after" ? "查看学期末" : "回到本周";
+  const countdown = nearestEventCountdown();
+  elements.eventCountdown.textContent = countdown;
+  elements.eventCountdown.classList.toggle("hidden", !countdown);
 }
 
 function refreshSystemClock() {
@@ -698,14 +716,15 @@ async function importExcel(file) {
 
     const previous = state;
     state = {
-      version: 1,
+      version: 2,
       semester: {
         ...state.semester, name: imported.title,
         totalWeeks: imported.totalWeeks, sourceFile: file.name,
         campus: imported.sessions.find((item) => item.campus)?.campus || ""
       },
       periods: imported.periods,
-      sessions: imported.sessions
+      sessions: imported.sessions,
+      events: (previous.events || []).filter((item) => item && item.name && /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")))
     };
     try {
       await saveState(`已导入 ${courseCount} 门课程`);
@@ -886,7 +905,8 @@ function exportBackup() {
   if (!state) return;
   const payload = {
     app: "course-schedule", version: 2, exportedAt: new Date().toISOString(),
-    semester: state.semester, periods: state.periods, sessions: state.sessions
+    semester: state.semester, periods: state.periods, sessions: state.sessions,
+    events: state.events || []
   };
   const json = JSON.stringify(payload, null, 2);
   if (window.CourseAppNative?.exportBackup) {
@@ -925,10 +945,12 @@ function validateBackupState(candidate) {
     semester: {
       name: String(semester.name || "课程表"), weekOneStart: semester.weekOneStart,
       classStartDate: semester.classStartDate, totalWeeks: Number(semester.totalWeeks) || 19,
-      campus: String(semester.campus || "")
+      campus: String(semester.campus || ""),
+      ...(semester.sourceFile ? {sourceFile: semester.sourceFile} : {})
     },
     periods: candidate.periods,
-    sessions: candidate.sessions
+    sessions: candidate.sessions,
+    events: Array.isArray(candidate.events) ? candidate.events : []
   };
 }
 
@@ -960,6 +982,42 @@ async function importBackupFile(file) {
   } catch (error) {
     showToast(error.message.includes("JSON") ? "备份文件格式不正确" : error.message);
   }
+}
+
+window.onNativeBackupResult = function (ok, message) {
+  showToast(message || (ok ? "备份已保存" : "备份保存失败"));
+};
+
+function renderPeriodsEditor() {
+  if (!state) return;
+  const periods = [...(state.periods || [])].sort((a, b) => a.number - b.number);
+  const rows = periods.map((period) => `<div class="period-row" data-number="${period.number}">
+    <span class="period-number">第 ${period.number} 节</span>
+    <input type="time" value="${escapeHtml(period.start || "")}" data-field="start" aria-label="第 ${period.number} 节开始时间" />
+    <span class="period-sep">–</span>
+    <input type="time" value="${escapeHtml(period.end || "")}" data-field="end" aria-label="第 ${period.number} 节结束时间" />
+    <button class="period-remove" type="button" data-remove="${period.number}" aria-label="删除第 ${period.number} 节">×</button>
+  </div>`).join("");
+  elements.periodEditor.innerHTML = (rows || '<p class="editor-empty">尚未设置节次时间，导入课表可自动带出。</p>')
+    + '<div class="editor-actions"><button class="ai-btn" id="addPeriod" type="button">＋ 添加一节</button><button class="ai-btn primary" id="savePeriods" type="button">保存节次时间</button></div>';
+}
+
+function renderEventsEditor() {
+  if (!state) return;
+  const events = [...(state.events || [])].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const rows = events.map((event) => `<div class="period-row" data-event="${escapeHtml(event.id)}">
+    <span class="period-number">${escapeHtml(event.date)}</span>
+    <span class="event-name">${escapeHtml(event.name)}</span>
+    <button class="period-remove" type="button" data-remove-event="${escapeHtml(event.id)}" aria-label="删除 ${escapeHtml(event.name)}">×</button>
+  </div>`).join("");
+  elements.eventEditor.innerHTML = (rows || '<p class="editor-empty">还没有倒计时事件，添加后会在日课表顶部显示。</p>')
+    + '<div class="event-add-row"><input id="eventName" maxlength="30" placeholder="名称，如 期末考" /><input id="eventDate" type="date" aria-label="事件日期" /><button class="ai-btn primary" id="addEvent" type="button">添加</button></div>';
+}
+
+function refreshSettingsEditors() {
+  if (!manageSettingsOpen) return;
+  if (!elements.periodEditor.contains(document.activeElement)) renderPeriodsEditor();
+  if (!elements.eventEditor.contains(document.activeElement)) renderEventsEditor();
 }
 
 window.onNativeBackupResult = function (ok, message) {
@@ -1160,11 +1218,64 @@ function bindEvents() {
     elements.manageSettingsToggle.classList.toggle("open", manageSettingsOpen);
     elements.manageSettingsToggle.setAttribute("aria-expanded", String(manageSettingsOpen));
     elements.semesterSettings.classList.toggle("hidden", !manageSettingsOpen);
+    if (manageSettingsOpen) refreshSettingsEditors();
   });
   elements.exportBackupBtn.addEventListener("click", exportBackup);
   elements.importBackupBtn.addEventListener("click", () => elements.backupFile.click());
   elements.backupFile.addEventListener("change", () => {
     importBackupFile(elements.backupFile.files[0]).finally(() => { elements.backupFile.value = ""; });
+  });
+  elements.periodEditor.addEventListener("click", (event) => {
+    if (event.target.closest("#addPeriod")) {
+      const used = new Set((state.periods || []).map((item) => item.number));
+      let number = 1;
+      while (used.has(number) && number <= 13) number += 1;
+      if (number > 13) return showToast("节次最多到第 13 节");
+      state.periods = [...(state.periods || []), {number, start: "", end: ""}].sort((a, b) => a.number - b.number);
+      renderPeriodsEditor();
+      return;
+    }
+    if (event.target.closest("#savePeriods")) {
+      saveState("节次时间已保存").then(() => render()).catch(() => {});
+      return;
+    }
+    const remove = event.target.closest("[data-remove]");
+    if (remove) {
+      state.periods = (state.periods || []).filter((item) => item.number !== Number(remove.dataset.remove));
+      renderPeriodsEditor();
+    }
+  });
+  elements.periodEditor.addEventListener("change", (event) => {
+    const input = event.target.closest("input[data-field]");
+    if (!input) return;
+    const row = input.closest("[data-number]");
+    if (!row) return;
+    const number = Number(row.dataset.number);
+    state.periods = (state.periods || []).map((item) => item.number === number
+      ? {...item, [input.dataset.field]: input.value} : item);
+  });
+  elements.eventEditor.addEventListener("click", (event) => {
+    if (event.target.closest("#addEvent")) {
+      const name = document.getElementById("eventName").value.trim();
+      const date = document.getElementById("eventDate").value;
+      if (!name) return showToast("请填写事件名称");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return showToast("请选择事件日期");
+      const events = state.events || [];
+      if (events.length >= 10) return showToast("倒计时事件最多 10 个");
+      events.push({id: `evt-${Date.now()}`, name, date});
+      state.events = events;
+      renderEventsEditor();
+      renderTermStatus();
+      saveState("倒计时已添加").catch(() => {});
+      return;
+    }
+    const remove = event.target.closest("[data-remove-event]");
+    if (remove) {
+      state.events = (state.events || []).filter((item) => item.id !== remove.dataset.removeEvent);
+      renderEventsEditor();
+      renderTermStatus();
+      saveState("倒计时已删除").catch(() => {});
+    }
   });
   elements.manageDayChips.addEventListener("click", (event) => {
     const chip = event.target.closest("[data-day]");

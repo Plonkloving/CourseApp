@@ -406,6 +406,24 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("widget_today_row_", today_provider)
         self.assertIn("MAX_ROWS", today_provider)
 
+    def test_countdown_and_period_editor(self):
+        html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "app" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('id="eventCountdown"', html)
+        self.assertIn('id="periodEditor"', html)
+        self.assertIn('id="eventEditor"', html)
+        self.assertIn("function nearestEventCountdown()", script)
+        self.assertIn("function renderPeriodsEditor()", script)
+        self.assertIn("function renderEventsEditor()", script)
+        self.assertIn("倒计时事件最多 10 个", script)
+        self.assertIn("events: (previous.events || [])", script)
+        self.assertIn("Array.isArray(candidate.events)", script)
+        self.assertNotIn("version: 1", script)
+        self.assertIn(".event-countdown", styles)
+        self.assertIn(".period-row", styles)
+        self.assertIn(".event-add-row", styles)
+
     def test_state_validation(self):
         server.validate_state(server.EMPTY_STATE)
 

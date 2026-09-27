@@ -320,6 +320,34 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn(".manage-group {", styles)
         self.assertIn(".manage-settings-toggle", styles)
 
+    def test_android_app_shortcuts_route_to_views(self):
+        root = ROOT / "android" / "app" / "src" / "main"
+        shortcuts = (root / "res" / "xml" / "shortcuts.xml").read_text(encoding="utf-8")
+        strings = (root / "res" / "values" / "strings.xml").read_text(encoding="utf-8")
+        manifest = (root / "AndroidManifest.xml").read_text(encoding="utf-8")
+        activity = (root / "java" / "com" / "local" / "courseschedule" / "MainActivity.java").read_text(encoding="utf-8")
+        scheduler = (root / "java" / "com" / "local" / "courseschedule" / "CourseNotificationScheduler.java").read_text(encoding="utf-8")
+        script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+        for name in ("ic_sc_today", "ic_sc_week", "ic_sc_month", "ic_sc_add", "ic_sc_next"):
+            self.assertTrue((root / "res" / "drawable" / f"{name}.xml").exists(), name)
+        self.assertIn('android:name="android.app.shortcuts"', manifest)
+        self.assertIn("@xml/shortcuts", manifest)
+        self.assertIn('android:launchMode="singleTask"', manifest)
+        for target in ("today", "week", "month", "add"):
+            self.assertIn(f'android:value="{target}"', shortcuts)
+        self.assertIn("shortcut_today", strings)
+        self.assertIn("getLaunchShortcut", activity)
+        self.assertIn("sendShortcutTarget", activity)
+        self.assertIn("updateNextClassShortcut", activity)
+        self.assertIn("updateNextClassShortcut", scheduler)
+        self.assertIn("ShortcutManagerCompat", scheduler)
+        self.assertIn("courseName", scheduler)
+        self.assertIn("window.onNativeShortcut", script)
+        self.assertIn("function applyShortcutTarget(", script)
+        self.assertIn('target === "week"', script)
+        self.assertIn('target === "add"', script)
+        self.assertIn("getLaunchShortcut", script)
+
     def test_state_validation(self):
         server.validate_state(server.EMPTY_STATE)
 

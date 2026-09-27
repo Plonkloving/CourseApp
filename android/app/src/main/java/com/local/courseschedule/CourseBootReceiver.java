@@ -8,5 +8,6 @@ public class CourseBootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         CourseNotificationScheduler.reschedule(context);
+        CourseNotificationScheduler.updateNextClassShortcut(context);
     }
 }

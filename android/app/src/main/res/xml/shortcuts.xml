@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="today"
+        android:enabled="true"
+        android:icon="@drawable/ic_sc_today"
+        android:shortcutShortLabel="@string/shortcut_today"
+        android:shortcutLongLabel="@string/shortcut_today_long">
+        <intent
+            android:action="com.local.courseschedule.shortcut.TODAY"
+            android:targetPackage="com.local.courseschedule"
+            android:targetClass="com.local.courseschedule.MainActivity">
+            <extra android:name="shortcutTarget" android:value="today" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="week"
+        android:enabled="true"
+        android:icon="@drawable/ic_sc_week"
+        android:shortcutShortLabel="@string/shortcut_week"
+        android:shortcutLongLabel="@string/shortcut_week_long">
+        <intent
+            android:action="com.local.courseschedule.shortcut.WEEK"
+            android:targetPackage="com.local.courseschedule"
+            android:targetClass="com.local.courseschedule.MainActivity">
+            <extra android:name="shortcutTarget" android:value="week" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="month"
+        android:enabled="true"
+        android:icon="@drawable/ic_sc_month"
+        android:shortcutShortLabel="@string/shortcut_month"
+        android:shortcutLongLabel="@string/shortcut_month_long">
+        <intent
+            android:action="com.local.courseschedule.shortcut.MONTH"
+            android:targetPackage="com.local.courseschedule"
+            android:targetClass="com.local.courseschedule.MainActivity">
+            <extra android:name="shortcutTarget" android:value="month" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="add"
+        android:enabled="true"
+        android:icon="@drawable/ic_sc_add"
+        android:shortcutShortLabel="@string/shortcut_add"
+        android:shortcutLongLabel="@string/shortcut_add_long">
+        <intent
+            android:action="com.local.courseschedule.shortcut.ADD"
+            android:targetPackage="com.local.courseschedule"
+            android:targetClass="com.local.courseschedule.MainActivity">
+            <extra android:name="shortcutTarget" android:value="add" />
+        </intent>
+    </shortcut>
+</shortcuts>

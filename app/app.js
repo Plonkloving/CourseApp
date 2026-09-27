@@ -786,6 +786,26 @@ function openCourseDateFromNotification(value) {
   switchView("schedule");
 }
 
+function applyShortcutTarget(target) {
+  if (!state || !target) return;
+  if (target === "week") {
+    switchView("week");
+  } else if (target === "month") {
+    switchView("month");
+  } else if (target === "add") {
+    switchView("manage");
+    openEditor();
+  } else if (target === "today") {
+    const position = teachingPosition();
+    selectedWeek = position.week;
+    selectedDay = position.day;
+    render();
+    switchView("schedule");
+  }
+}
+
+window.onNativeShortcut = applyShortcutTarget;
+
 window.onNativeNotificationSettingsChanged = refreshNotificationSettings;
 window.onNativeNotificationOpen = openCourseDateFromNotification;
 
@@ -1057,6 +1077,7 @@ async function initialize() {
   setInterval(refreshSystemClock, 1000);
   window.__courseAppReady = true;
   if (window.CourseAppNative?.getLaunchCourseDate) openCourseDateFromNotification(window.CourseAppNative.getLaunchCourseDate());
+  if (window.CourseAppNative?.getLaunchShortcut) applyShortcutTarget(window.CourseAppNative.getLaunchShortcut());
   runStartupPrompts();
   if (!window.CourseAppNative && "serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
 }

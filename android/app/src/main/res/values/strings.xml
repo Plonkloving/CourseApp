@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcut_today">今天课表</string>
+    <string name="shortcut_today_long">查看今天课表</string>
+    <string name="shortcut_week">周课表</string>
+    <string name="shortcut_week_long">查看整周课表</string>
+    <string name="shortcut_month">月课表</string>
+    <string name="shortcut_month_long">查看月课表</string>
+    <string name="shortcut_add">新增课程</string>
+    <string name="shortcut_add_long">新增一门课程</string>
+</resources>

@@ -56,16 +56,19 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> fileChooserCallback;
     private File pendingUpdate;
     private String pendingCourseDate = "";
+    private String pendingShortcutTarget = "";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         pendingCourseDate = getIntent().getStringExtra("courseDate");
+        pendingShortcutTarget = getIntent().getStringExtra("shortcutTarget");
         removeLegacyVisionSecrets(this);
         removeCampusMapData(this);
         CourseNotificationScheduler.createChannel(this);
         applySystemBars(false);
+        CourseNotificationScheduler.updateNextClassShortcut(this);
 
         webView = new WebView(this);
         WebSettings settings = webView.getSettings();
@@ -138,13 +141,18 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    protected void onNewIntent(Intent intent) {
+    public void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
         String courseDate = intent.getStringExtra("courseDate");
         if (courseDate != null && !courseDate.isEmpty()) {
             pendingCourseDate = courseDate;
             sendOpenCourseDate(courseDate);
+        }
+        String shortcutTarget = intent.getStringExtra("shortcutTarget");
+        if (shortcutTarget != null && !shortcutTarget.isEmpty()) {
+            pendingShortcutTarget = shortcutTarget;
+            sendShortcutTarget(shortcutTarget);
         }
     }
 
@@ -208,6 +216,11 @@ public class MainActivity extends Activity {
     private void sendOpenCourseDate(String date) {
         if (webView != null) webView.post(() -> webView.evaluateJavascript(
                 "window.onNativeNotificationOpen?.(" + JSONObject.quote(date) + ")", null));
+    }
+
+    private void sendShortcutTarget(String target) {
+        if (webView != null) webView.post(() -> webView.evaluateJavascript(
+                "window.onNativeShortcut?.(" + JSONObject.quote(target) + ")", null));
     }
 
     private static void removeLegacyVisionSecrets(Context context) {
@@ -648,6 +661,13 @@ public class MainActivity extends Activity {
             return date;
         }
 
+        @JavascriptInterface
+        public String getLaunchShortcut() {
+            String target = pendingShortcutTarget == null ? "" : pendingShortcutTarget;
+            pendingShortcutTarget = "";
+            return target;
+        }
+
         private String safeMessage(Exception error) {
             String message = error.getMessage();
             if (message == null || message.trim().isEmpty()) return "操作失败";
@@ -770,7 +790,10 @@ public class MainActivity extends Activity {
                 return "{\"ok\":false,\"error\":\"课程数据结构不合法\"}";
             }
             boolean saved = preferences.edit().putString(STATE_KEY, json).commit();
-            if (saved) CourseNotificationScheduler.reschedule(context);
+            if (saved) {
+                CourseNotificationScheduler.reschedule(context);
+                CourseNotificationScheduler.updateNextClassShortcut(context);
+            }
             return saved ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"手机存储写入失败\"}";
         }
 

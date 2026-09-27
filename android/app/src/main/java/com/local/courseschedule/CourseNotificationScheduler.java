@@ -12,11 +12,16 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 
+import androidx.core.content.pm.ShortcutInfoCompat;
+import androidx.core.content.pm.ShortcutManagerCompat;
+import androidx.core.graphics.drawable.IconCompat;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.Date;
 import java.util.Locale;
 
@@ -147,6 +152,55 @@ final class CourseNotificationScheduler {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.N || manager.areNotificationsEnabled();
     }
 
+    static void updateNextClassShortcut(Context context) {
+        Context appContext = context.getApplicationContext();
+        JSONObject best = null;
+        try {
+            String saved = appContext.getSharedPreferences(STATE_PREFERENCES, Context.MODE_PRIVATE).getString(STATE_KEY, null);
+            if (saved != null) {
+                JSONObject state = new JSONObject(saved);
+                JSONObject semester = state.getJSONObject("semester");
+                JSONArray periods = state.optJSONArray("periods");
+                JSONArray sessions = state.getJSONArray("sessions");
+                long now = System.currentTimeMillis();
+                for (int index = 0; index < sessions.length(); index++) {
+                    JSONObject next = nextOccurrence(semester, periods, sessions.getJSONObject(index), 0, now);
+                    if (next != null && (best == null || next.getLong("alarmAt") < best.getLong("alarmAt"))) best = next;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        if (best == null) {
+            ShortcutManagerCompat.removeDynamicShortcuts(appContext, Collections.singletonList("next-class"));
+            return;
+        }
+        String courseName = clean(best.optString("courseName", "课程"), "课程");
+        String location = clean(best.optString("location", ""), "");
+        String weekday = "";
+        try {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT);
+            format.setLenient(false);
+            Calendar calendar = Calendar.getInstance();
+            calendar.setTime(format.parse(best.getString("courseDate")));
+            int dayIndex = calendar.get(Calendar.DAY_OF_WEEK) - 1;
+            weekday = "日一二三四五六".substring(dayIndex, dayIndex + 1);
+        } catch (Exception ignored) {
+        }
+        String shortLabel = courseName.length() > 10 ? courseName.substring(0, 10) : courseName;
+        String longLabel = (weekday.isEmpty() ? "" : "周" + weekday + " " + best.optString("startTime", "") + " · ")
+                + courseName + (location.isEmpty() ? "" : " · " + location);
+        Intent intent = new Intent(context, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra("courseDate", best.optString("courseDate", ""));
+        ShortcutInfoCompat shortcut = new ShortcutInfoCompat.Builder(appContext, "next-class")
+                .setShortLabel(shortLabel)
+                .setLongLabel(longLabel)
+                .setIcon(IconCompat.createWithResource(appContext, R.drawable.ic_sc_next))
+                .setIntent(intent)
+                .build();
+        ShortcutManagerCompat.setDynamicShortcuts(appContext, Collections.singletonList(shortcut));
+    }
+
     static boolean exactAlarmsGranted(Context context) {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.S
                 || ((AlarmManager) context.getSystemService(Context.ALARM_SERVICE)).canScheduleExactAlarms();
@@ -178,7 +232,9 @@ final class CourseNotificationScheduler {
             if (earliest == null || alarmAt < earliest.getLong("alarmAt")) earliest = new JSONObject()
                     .put("alarmAt", alarmAt)
                     .put("startTime", startTime)
-                    .put("courseDate", new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(occurrence.getTime()));
+                    .put("courseDate", new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(occurrence.getTime()))
+                    .put("courseName", session.optString("name", "课程"))
+                    .put("location", session.optString("location", ""));
         }
         return earliest;
     }

@@ -20,6 +20,8 @@ let weekGridFiveDays = localStorage.getItem("course-app-week-days") !== "7";
 let manageExpanded = new Set();
 let manageFilterDay = 0;
 let manageSettingsOpen = false;
+let weekGridDayCount = 7;
+let conflictAcknowledge = false;
 
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -34,6 +36,7 @@ const elements = {
   manageView: $("#manageView"), previousWeek: $("#previousWeek"), nextWeek: $("#nextWeek"),
   manageDayChips: $("#manageDayChips"), manageToggleAll: $("#manageToggleAll"),
   manageSettingsToggle: $("#manageSettingsToggle"), semesterSettings: $("#semesterSettings"),
+  backupFile: $("#backupFile"), exportBackupBtn: $("#exportBackup"), importBackupBtn: $("#importBackup"),
   todayButton: $("#todayButton"), weekSelect: $("#weekSelect"), courseDialog: $("#courseDialog"), courseForm: $("#courseForm"),
   deleteCourse: $("#deleteCourse"), formError: $("#formError"), toast: $("#toast"),
   infoDialog: $("#infoDialog"), lanUrls: $("#lanUrls"), excelFile: $("#excelFile"),
@@ -195,6 +198,10 @@ function refreshSystemClock() {
     lastClockMinute = minuteKey;
     renderCourses();
     if (activeView === "month") renderMonthView();
+    if (activeView === "week") {
+      if (document.getElementById("weekNowLine")) positionWeekNowLine();
+      else renderWeekGrid();
+    }
   }
 }
 
@@ -328,6 +335,66 @@ function renderWeekGrid() {
   elements.weekGrid.style.gridTemplateRows = `auto repeat(${periods.length}, minmax(48px, auto))`;
   elements.weekGrid.innerHTML = cells.join("");
   elements.weekGridEmpty.classList.toggle("hidden", daySessions.some((list) => list.length));
+  weekGridDayCount = dayCount;
+  const previousLine = document.getElementById("weekNowLine");
+  if (previousLine) previousLine.remove();
+  const todayInfo = teachingInfoForDate(new Date());
+  if (state.periods.length && todayInfo.week === selectedWeek && todayInfo.day <= dayCount) {
+    const line = document.createElement("div");
+    line.id = "weekNowLine";
+    line.className = "week-now-line";
+    const label = document.createElement("span");
+    label.className = "week-now-time";
+    line.appendChild(label);
+    elements.weekGrid.appendChild(line);
+    positionWeekNowLine();
+  }
+}
+
+function nowLineTop() {
+  const rows = [...elements.weekGrid.querySelectorAll(".week-grid-time")];
+  if (!rows.length) return null;
+  const now = new Date();
+  const minutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+  const anchors = [];
+  for (const cell of rows) {
+    const number = Number(cell.querySelector("strong").textContent);
+    const period = state.periods.find((item) => item.number === number);
+    if (!period || !period.start || !period.end) continue;
+    const [h, m] = period.start.split(":").map(Number);
+    const [eh, em] = period.end.split(":").map(Number);
+    anchors.push({start: h * 60 + m, end: eh * 60 + em, top: cell.offsetTop, height: cell.offsetHeight});
+  }
+  if (!anchors.length) return null;
+  if (minutes < anchors[0].start - 20 || minutes > anchors[anchors.length - 1].end + 20) return null;
+  for (let index = 0; index < anchors.length; index += 1) {
+    const anchor = anchors[index];
+    if (minutes >= anchor.start && minutes <= anchor.end) {
+      return anchor.top + (minutes - anchor.start) / (anchor.end - anchor.start || 1) * anchor.height;
+    }
+    const next = anchors[index + 1];
+    if (next && minutes > anchor.end && minutes < next.start) {
+      const span = next.top - (anchor.top + anchor.height);
+      return anchor.top + anchor.height + (minutes - anchor.end) / (next.start - anchor.end || 1) * span;
+    }
+  }
+  return null;
+}
+
+function positionWeekNowLine() {
+  const line = document.getElementById("weekNowLine");
+  if (!line) return;
+  const top = nowLineTop();
+  if (top === null) {
+    line.remove();
+    return;
+  }
+  line.style.top = top + "px";
+  const label = line.querySelector(".week-now-time");
+  if (label) {
+    const now = new Date();
+    label.textContent = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  }
 }
 
 function renderMonthView() {
@@ -458,6 +525,7 @@ function openEditor(id = "") {
   const session = state.sessions.find((item) => item.id === id);
   const form = elements.courseForm;
   form.reset();
+  conflictAcknowledge = false;
   elements.formError.textContent = "";
   $("#dialogTitle").textContent = session ? "编辑课程" : "新增课程";
   $("#dialogEyebrow").textContent = session ? "修改上课安排" : "添加上课安排";
@@ -511,6 +579,13 @@ async function submitCourse(event) {
     if (!previous && window.CourseExcelImport?.colorFor) {
       session.color = CourseExcelImport.colorFor(session.name || session.code || "课程");
     }
+    const conflicts = findConflicts(session);
+    if (conflicts.length && !conflictAcknowledge) {
+      conflictAcknowledge = true;
+      elements.formError.textContent = `该时段与「${conflicts.map((item) => item.name).join("」「")}」重叠，确认无误请再点一次保存`;
+      return;
+    }
+    conflictAcknowledge = false;
     if (previous) state.sessions = state.sessions.map((item) => item.id === existingId ? session : item);
     else state.sessions.push(session);
     await saveState(previous ? "课程修改已保存" : "课程已添加");
@@ -807,6 +882,97 @@ function applyShortcutTarget(target) {
   }
 }
 
+function exportBackup() {
+  if (!state) return;
+  const payload = {
+    app: "course-schedule", version: 2, exportedAt: new Date().toISOString(),
+    semester: state.semester, periods: state.periods, sessions: state.sessions
+  };
+  const json = JSON.stringify(payload, null, 2);
+  if (window.CourseAppNative?.exportBackup) {
+    const result = JSON.parse(window.CourseAppNative.exportBackup(json));
+    if (!result.ok) showToast(result.error || "导出失败");
+    return;
+  }
+  const blob = new Blob([json], {type: "application/json"});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `CourseSchedule-backup-${localDateKey(new Date()).replace(/-/g, "")}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast("备份已生成，请选择保存位置");
+}
+
+function validateBackupState(candidate) {
+  if (!candidate || typeof candidate !== "object") throw new Error("备份文件结构不正确");
+  const semester = candidate.semester;
+  if (!semester || typeof semester.weekOneStart !== "string" || typeof semester.classStartDate !== "string") {
+    throw new Error("备份缺少学期信息");
+  }
+  if (!Array.isArray(candidate.sessions) || candidate.sessions.length > 500) throw new Error("课程数据不合法");
+  if (!Array.isArray(candidate.periods)) throw new Error("节次数据不合法");
+  const required = ["id", "name", "day", "periodStart", "periodEnd", "weeks", "location"];
+  candidate.sessions.forEach((session, index) => {
+    if (typeof session !== "object" || !required.every((field) => field in session)) {
+      throw new Error(`第 ${index + 1} 条课程数据不完整`);
+    }
+  });
+  return {
+    version: 2,
+    semester: {
+      name: String(semester.name || "课程表"), weekOneStart: semester.weekOneStart,
+      classStartDate: semester.classStartDate, totalWeeks: Number(semester.totalWeeks) || 19,
+      campus: String(semester.campus || "")
+    },
+    periods: candidate.periods,
+    sessions: candidate.sessions
+  };
+}
+
+async function importBackupFile(file) {
+  if (!file) return;
+  try {
+    const text = file.text ? await file.text() : await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("无法读取备份文件"));
+      reader.readAsText(file);
+    });
+    const restored = validateBackupState(JSON.parse(text));
+    if (!confirm(`备份包含 ${restored.sessions.length} 条课程安排（${restored.semester.name || "未命名"}）。\n导入将替换当前课程，是否继续？`)) return;
+    const rollback = state;
+    state = restored;
+    normalizeStateDates();
+    try {
+      await saveState("备份已恢复");
+    } catch (error) {
+      state = rollback;
+      throw error;
+    }
+    elements.weekSelect.innerHTML = "";
+    const position = teachingPosition();
+    selectedWeek = position.week;
+    selectedDay = position.day;
+    render();
+  } catch (error) {
+    showToast(error.message.includes("JSON") ? "备份文件格式不正确" : error.message);
+  }
+}
+
+window.onNativeBackupResult = function (ok, message) {
+  showToast(message || (ok ? "备份已保存" : "备份保存失败"));
+};
+
+function findConflicts(session) {
+  return state.sessions.filter((item) => item.id !== session.id
+    && item.day === session.day
+    && item.weeks.some((week) => session.weeks.includes(week))
+    && item.periodStart <= session.periodEnd && session.periodStart <= item.periodEnd);
+}
+
 window.onNativeShortcut = applyShortcutTarget;
 
 window.onNativeNotificationSettingsChanged = refreshNotificationSettings;
@@ -994,6 +1160,11 @@ function bindEvents() {
     elements.manageSettingsToggle.classList.toggle("open", manageSettingsOpen);
     elements.manageSettingsToggle.setAttribute("aria-expanded", String(manageSettingsOpen));
     elements.semesterSettings.classList.toggle("hidden", !manageSettingsOpen);
+  });
+  elements.exportBackupBtn.addEventListener("click", exportBackup);
+  elements.importBackupBtn.addEventListener("click", () => elements.backupFile.click());
+  elements.backupFile.addEventListener("change", () => {
+    importBackupFile(elements.backupFile.files[0]).finally(() => { elements.backupFile.value = ""; });
   });
   elements.manageDayChips.addEventListener("click", (event) => {
     const chip = event.target.closest("[data-day]");

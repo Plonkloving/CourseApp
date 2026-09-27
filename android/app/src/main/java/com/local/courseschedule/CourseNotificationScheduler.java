@@ -152,22 +152,68 @@ final class CourseNotificationScheduler {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.N || manager.areNotificationsEnabled();
     }
 
+    static JSONObject findNextSession(Context context) {
+        try {
+            String saved = context.getApplicationContext()
+                    .getSharedPreferences(STATE_PREFERENCES, Context.MODE_PRIVATE).getString(STATE_KEY, null);
+            if (saved == null) return null;
+            JSONObject state = new JSONObject(saved);
+            JSONObject semester = state.getJSONObject("semester");
+            JSONArray periods = state.optJSONArray("periods");
+            JSONArray sessions = state.getJSONArray("sessions");
+            long now = System.currentTimeMillis();
+            JSONObject best = null;
+            for (int index = 0; index < sessions.length(); index++) {
+                JSONObject next = nextOccurrence(semester, periods, sessions.getJSONObject(index), 0, now);
+                if (next != null && (best == null || next.getLong("alarmAt") < best.getLong("alarmAt"))) best = next;
+            }
+            return best;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    static String weekdayOf(String date) {
+        try {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT);
+            format.setLenient(false);
+            Calendar calendar = Calendar.getInstance();
+            calendar.setTime(format.parse(date));
+            int dayIndex = calendar.get(Calendar.DAY_OF_WEEK) - 1;
+            return "日一二三四五六".substring(dayIndex, dayIndex + 1);
+        } catch (Exception error) {
+            return "";
+        }
+    }
+
+    static String daysUntil(String date) {
+        try {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT);
+            format.setLenient(false);
+            Calendar target = Calendar.getInstance();
+            target.setTime(format.parse(date));
+            target.set(Calendar.HOUR_OF_DAY, 0);
+            target.set(Calendar.MINUTE, 0);
+            target.set(Calendar.SECOND, 0);
+            target.set(Calendar.MILLISECOND, 0);
+            Calendar today = Calendar.getInstance();
+            today.set(Calendar.HOUR_OF_DAY, 0);
+            today.set(Calendar.MINUTE, 0);
+            today.set(Calendar.SECOND, 0);
+            today.set(Calendar.MILLISECOND, 0);
+            long diff = (target.getTimeInMillis() - today.getTimeInMillis()) / 86_400_000L;
+            if (diff == 0) return "今天";
+            if (diff == 1) return "明天";
+            return diff + " 天后";
+        } catch (Exception error) {
+            return "";
+        }
+    }
+
     static void updateNextClassShortcut(Context context) {
         Context appContext = context.getApplicationContext();
         try {
-            JSONObject best = null;
-            String saved = appContext.getSharedPreferences(STATE_PREFERENCES, Context.MODE_PRIVATE).getString(STATE_KEY, null);
-            if (saved != null) {
-                JSONObject state = new JSONObject(saved);
-                JSONObject semester = state.getJSONObject("semester");
-                JSONArray periods = state.optJSONArray("periods");
-                JSONArray sessions = state.getJSONArray("sessions");
-                long now = System.currentTimeMillis();
-                for (int index = 0; index < sessions.length(); index++) {
-                    JSONObject next = nextOccurrence(semester, periods, sessions.getJSONObject(index), 0, now);
-                    if (next != null && (best == null || next.getLong("alarmAt") < best.getLong("alarmAt"))) best = next;
-                }
-            }
+            JSONObject best = findNextSession(context);
             if (best == null) {
                 ShortcutManagerCompat.removeDynamicShortcuts(appContext, Collections.singletonList("next-class"));
                 return;
@@ -305,7 +351,7 @@ final class CourseNotificationScheduler {
         return false;
     }
 
-    private static String clean(String value, String fallback) {
+    static String clean(String value, String fallback) {
         if (value == null || value.trim().isEmpty()) return fallback;
         String clean = value.replace('\n', ' ').replace('\r', ' ').trim();
         return clean.length() > 100 ? clean.substring(0, 100) : clean;

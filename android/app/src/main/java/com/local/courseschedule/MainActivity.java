@@ -2,6 +2,7 @@ package com.local.courseschedule;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.appwidget.AppWidgetManager;
 import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
@@ -39,6 +40,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -51,12 +54,14 @@ import javax.crypto.spec.GCMParameterSpec;
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 1001;
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1004;
+    private static final int BACKUP_EXPORT_REQUEST = 1005;
     private WebView webView;
     private NativeBridge nativeBridge;
     private ValueCallback<Uri[]> fileChooserCallback;
     private File pendingUpdate;
     private String pendingCourseDate = "";
     private String pendingShortcutTarget = "";
+    private String pendingBackupJson = "";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -135,6 +140,23 @@ public class MainActivity extends Activity {
             Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
             fileChooserCallback.onReceiveValue(result);
             fileChooserCallback = null;
+            return;
+        }
+        if (requestCode == BACKUP_EXPORT_REQUEST) {
+            String payload = pendingBackupJson;
+            pendingBackupJson = "";
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+            boolean ok = false;
+            String message = "备份已保存";
+            try (OutputStream output = getContentResolver().openOutputStream(data.getData())) {
+                if (output == null) throw new Exception("无法写入所选位置");
+                output.write(payload.getBytes(StandardCharsets.UTF_8));
+                ok = true;
+            } catch (Exception error) {
+                message = "备份保存失败：" + error.getMessage();
+            }
+            String script = "window.onNativeBackupResult?.(" + ok + "," + JSONObject.quote(message) + ")";
+            webView.post(() -> webView.evaluateJavascript(script, null));
             return;
         }
         super.onActivityResult(requestCode, resultCode, data);
@@ -668,6 +690,26 @@ public class MainActivity extends Activity {
             return target;
         }
 
+        @JavascriptInterface
+        public String exportBackup(String json) {
+            JSONObject result = new JSONObject();
+            try {
+                if (json == null || json.length() < 10 || json.length() > 2_000_000) throw new Exception("备份内容不合法");
+                pendingBackupJson = json;
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("application/json");
+                intent.putExtra(Intent.EXTRA_TITLE, "CourseSchedule-backup-"
+                        + new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date()) + ".json");
+                webView.post(() -> startActivityForResult(intent, BACKUP_EXPORT_REQUEST));
+                result.put("ok", true);
+            } catch (Exception error) {
+                pendingBackupJson = "";
+                try { result.put("ok", false).put("error", safeMessage(error)); } catch (Exception ignored) {}
+            }
+            return result.toString();
+        }
+
         private String safeMessage(Exception error) {
             String message = error.getMessage();
             if (message == null || message.trim().isEmpty()) return "操作失败";
@@ -793,6 +835,9 @@ public class MainActivity extends Activity {
             if (saved) {
                 CourseNotificationScheduler.reschedule(context);
                 CourseNotificationScheduler.updateNextClassShortcut(context);
+                AppWidgetManager widgetManager = AppWidgetManager.getInstance(context);
+                NextClassWidgetProvider.refresh(context, widgetManager);
+                TodayWidgetProvider.refresh(context, widgetManager);
             }
             return saved ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"手机存储写入失败\"}";
         }

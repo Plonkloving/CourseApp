@@ -76,7 +76,7 @@ public class TodayWidgetProvider extends AppWidgetProvider {
                             }
                         }
                     }
-                    matches.sort((a, b) -> Integer.compare(a.optInt("periodStart"), b.optInt("periodStart")));
+                    java.util.Collections.sort(matches, (a, b) -> Integer.compare(a.optInt("periodStart"), b.optInt("periodStart")));
                     for (JSONObject session : matches) {
                         lines.add(periodLabel(periods, session.optInt("periodStart"), session.optInt("periodEnd"))
                                 + "  " + session.optString("name", "课程")

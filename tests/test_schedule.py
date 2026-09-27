@@ -73,7 +73,7 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("prefers-color-scheme: dark", html)
         self.assertIn("prefers-reduced-motion: reduce", styles)
         self.assertIn('name="theme-color" content="#243F7A"', html)
-        self.assertIn('CACHE_NAME = "course-app-v12"', service_worker)
+        self.assertIn('CACHE_NAME = "course-app-v13"', service_worker)
 
     def test_android_asset_entry_uses_classic_script(self):
         html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
@@ -283,6 +283,11 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("reasoning_content", assistant)
         self.assertIn("[DONE]", assistant)
         self.assertIn("prompt_cache_hit_tokens", assistant)
+        self.assertIn("MAX_CONTEXT_SESSIONS", assistant)
+        self.assertIn("全部课程安排共", assistant)
+        self.assertIn("未列出的日期没有课程", assistant)
+        self.assertIn("【今天是", assistant)
+        self.assertIn("附带课表 · ", assistant)
         self.assertIn("aiChatRequest", activity)
         self.assertIn("Authorization", activity)
         self.assertIn("AndroidKeyStore", activity)

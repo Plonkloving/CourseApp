@@ -27,6 +27,7 @@
 
   const MAX_RESPONSE_BYTES = 2000000;
   const MAX_HISTORY_MESSAGES = 12;
+  const MAX_CONTEXT_SESSIONS = 300;
 
   const el = {};
   ["aiBall", "aiCapsule", "aiCapsuleText", "aiWindow", "aiHead", "aiTitle", "aiConfigBtn", "aiMinimize", "aiClose",
@@ -73,6 +74,8 @@
   function setConfigStatus(text) { el.aiConfigStatus.textContent = text || ""; }
 
   function syncChips() {
+    const count = typeof state !== "undefined" && state ? state.sessions.length : 0;
+    el.aiContextChip.textContent = ai.contextOn ? `附带课表 · ${count} 条` : "课表明细关";
     el.aiContextChip.classList.toggle("active", ai.contextOn);
     el.aiThinkChip.classList.toggle("active", ai.thinkingOn);
   }
@@ -201,27 +204,30 @@
     const lines = ["你是课程表应用内的 AI 助手，回答使用中文，保持简洁准确，不要编造课表里没有的内容。"];
     lines.push("以下学期与课表信息来自用户本机：");
     if (typeof state !== "undefined" && state) {
-      lines.push(`学期：${state.semester.name || "未命名"}；共 ${state.semester.totalWeeks} 个教学周；第一教学周基准日 ${state.semester.weekOneStart}；实际开课日 ${state.semester.classStartDate}。`);
-      const today = new Date();
-      const weekday = "一二三四五六日"[today.getDay() === 0 ? 6 : today.getDay() - 1];
-      const position = teachingPosition();
-      const phase = position.phase === "in" ? `第 ${position.week} 教学周` : position.phase === "before" ? "尚未开课" : "本学期教学周已结束";
-      lines.push(`今天是 ${localDateKey(today)}（星期${weekday}），${phase}。`);
+      lines.push(`学期：${state.semester.name || "未命名"}；共 ${state.semester.totalWeeks} 个教学周；第一教学周基准日 ${state.semester.weekOneStart}（第 1 周的星期一），实际开课日 ${state.semester.classStartDate}。任意日期所在的教学周 = 该日期与基准日的天数差除以 7 再加 1。`);
       if (state.periods.length) {
         lines.push("节次时间：" + state.periods.map((p) => `${p.number}(${p.start || "?"}–${p.end || "?"})`).join(" "));
       }
       if (ai.contextOn) {
-        for (let offset = 0; offset < 7; offset += 1) {
-          const date = addDays(new Date(today.getFullYear(), today.getMonth(), today.getDate()), offset);
-          const sessions = sessionsForDate(date);
-          if (sessions.length) {
-            const dayIndex = date.getDay() === 0 ? 6 : date.getDay() - 1;
-            lines.push(`${localDateKey(date)}（周${"一二三四五六日"[dayIndex]}）：` + sessions.map((s) =>
-              `${s.name} 第${s.periodStart}-${s.periodEnd}节${s.location ? " @" + s.location : ""}`).join("；"));
+        if (!state.sessions.length) {
+          lines.push("课表明细为空：当前没有导入或录入任何课程。");
+        } else {
+          const sorted = [...state.sessions].sort((a, b) => a.day - b.day || a.periodStart - b.periodStart
+            || String(a.name).localeCompare(String(b.name), "zh-CN"));
+          const capped = sorted.slice(0, MAX_CONTEXT_SESSIONS);
+          lines.push(`全部课程安排共 ${state.sessions.length} 条${sorted.length > capped.length ? `（数据较多，仅注入前 ${MAX_CONTEXT_SESSIONS} 条）` : ""}；未列出的日期没有课程：`);
+          for (const session of capped) {
+            const parts = [`${session.name}${session.code ? `(${session.code})` : ""}`,
+              `周${SHORT_DAYS[session.day - 1]} 第${session.periodStart}-${session.periodEnd}节`,
+              session.weekLabel || formatWeeks(session.weeks)];
+            if (session.teacher) parts.push(session.teacher);
+            if (session.location) parts.push("@" + session.location);
+            if (session.campus) parts.push("@" + session.campus);
+            lines.push("- " + parts.join(" "));
           }
         }
       } else {
-        lines.push("用户选择不附带课表上下文。");
+        lines.push("用户未附带课程明细，仅提供学期与节次信息。");
       }
     } else {
       lines.push("课表暂未加载。");
@@ -230,9 +236,22 @@
   }
 
   function buildMessages() {
-    const history = ai.messages.slice(-MAX_HISTORY_MESSAGES);
-    return [{role: "system", content: buildSystemPrompt()}].concat(
-      history.map((item) => ({role: item.role, content: item.content})));
+    const history = ai.messages.slice(-MAX_HISTORY_MESSAGES).map((item) => ({role: item.role, content: item.content}));
+    if (typeof state !== "undefined" && state) {
+      const today = new Date();
+      const weekday = "一二三四五六日"[today.getDay() === 0 ? 6 : today.getDay() - 1];
+      const position = teachingPosition();
+      const phase = position.phase === "in" ? `第 ${position.week} 教学周`
+        : position.phase === "before" ? "尚未开课" : "教学周已结束";
+      const prefix = `【今天是 ${localDateKey(today)} 星期${weekday} · ${phase}】`;
+      for (let index = history.length - 1; index >= 0; index -= 1) {
+        if (history[index].role === "user") {
+          history[index].content = prefix + history[index].content;
+          break;
+        }
+      }
+    }
+    return [{role: "system", content: buildSystemPrompt()}].concat(history);
   }
 
   function buildBody(keepModel) {
@@ -466,6 +485,7 @@
     el.aiWindow.classList.remove("hidden");
     el.aiCapsule.classList.add("hidden");
     el.aiBall.classList.add("ai-ball-active");
+    syncChips();
     restoreWindowPos();
     setTimeout(() => el.aiInput.focus(), 60);
   }
@@ -559,8 +579,7 @@
   // ---------- 初始化 ----------
   function init() {
     if (!available()) return;
-    el.aiContextChip.classList.toggle("active", ai.contextOn);
-    el.aiThinkChip.classList.toggle("active", ai.thinkingOn);
+    syncChips();
     el.aiPrivacyNote.classList.toggle("hidden", localStorage.getItem(AI_NOTICE_KEY) === "seen");
 
     el.aiClose.addEventListener("click", closeWindow);

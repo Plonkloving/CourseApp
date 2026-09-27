@@ -4,7 +4,7 @@
 
 ## Android 离线安装版
 
-安装包位于 `outputs/CourseSchedule-1.9.0.apk`，支持 Android 6.0 及以上系统。将 APK 传到手机后直接安装即可，不需要电脑、Wi-Fi 或服务器。
+安装包位于 `outputs/CourseSchedule-2.0.0.apk`，支持 Android 6.0 及以上系统。将 APK 传到手机后直接安装即可，不需要电脑、Wi-Fi 或服务器。
 
 - 安装包只包含空白课程表，不内置示例、真实课表或原始 Excel 数据。
 - 手机上新增、修改、删除的课程保存在应用私有空间。
@@ -50,11 +50,12 @@
 
 ## 构建与发布注意事项
 
+- 支持多学期管理：在“课程管理”顶部切换、新建（最多 20 个）或删除学期，各学期课程、节次时间与倒计时事件独立保存；日课表改为垂直时间轴视图，按节次定位课程并显示“当前时间”指针。
 - 支持在“课程管理”的设置抽屉中自定义节次时间（导入课表也可自动带出），并添加最多 10 个倒计时事件（如期末考），最近的一个会显示在日课表顶部。
 - 提供两种桌面小组件：2×2“下一节课”卡片（自动倒计时）和 4×2“今天课表”列表，随课表修改、开机与系统时间变化自动刷新。
 - 支持导出/导入 JSON 备份文件用于换机迁移，备份仅包含课表数据且由用户自行选择保存位置。
 - Android 7.1 及以上长按桌面图标可显示快捷方式：今天课表、周课表、月课表、新增课程，以及动态的“下一节课”（随课表自动更新；个别厂商桌面支持度不同）。
-- 应用 ID：`com.local.courseschedule`；当前 Android 版本：`1.9.0`（versionCode 23）。
+- 应用 ID：`com.local.courseschedule`；当前 Android 版本：`2.0.0`（versionCode 24）。
 - 更新源配置为 GitHub 仓库 `Plonkloving/CourseApp`，Release 中需至少包含一个 `.apk` 文件。
 - `android/signing/`、`android/keystore.properties`、真实 Excel 和真实课程数据不得上传公开仓库；发布新版必须继续使用原签名。
 - Excel 解析使用随 APK 打包的 SheetJS CE 0.20.3，许可证位于 `app/vendor/SheetJS-LICENSE.txt`。

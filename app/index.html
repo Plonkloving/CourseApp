@@ -124,6 +124,13 @@
               <input id="excelFile" class="hidden" type="file" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
             </div>
           </div>
+          <div class="semester-switcher">
+            <label class="field">学期
+              <select id="semesterSelect" aria-label="切换学期"></select>
+            </label>
+            <button class="ai-btn" id="addSemester" type="button">＋ 新学期</button>
+            <button class="ai-btn danger" id="deleteSemester" type="button">删除本学期</button>
+          </div>
           <p class="manage-note">导入“节次 × 星期”格式的 .xls/.xlsx 课表，仅在本机解析并替换当前课程。</p>
           <div class="manage-filters">
             <div class="manage-day-chips" id="manageDayChips" role="group" aria-label="按星期筛选"></div>

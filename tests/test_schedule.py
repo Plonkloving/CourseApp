@@ -424,6 +424,29 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn(".period-row", styles)
         self.assertIn(".event-add-row", styles)
 
+    def test_multi_semester_and_day_timeline(self):
+        html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "app" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('id="semesterSelect"', html)
+        self.assertIn('id="addSemester"', html)
+        self.assertIn('id="deleteSemester"', html)
+        self.assertIn("function normalizeState()", script)
+        self.assertIn("function applyActiveSemester()", script)
+        self.assertIn("function syncActiveSemesterEntry()", script)
+        self.assertIn("function renderSemesterSwitcher()", script)
+        self.assertIn("state.semesters.length >= 20", script)
+        self.assertIn("version: 3", script)
+        self.assertNotIn("version: 1", script)
+        self.assertIn("function renderDayTimeline()", script)
+        self.assertIn("function dayTimelineBlock(", script)
+        self.assertIn("function positionDayNowLine()", script)
+        self.assertIn("day-now-line", script)
+        self.assertIn(".day-timeline", styles)
+        self.assertIn(".day-axis", styles)
+        self.assertIn(".day-block", styles)
+        self.assertIn(".semester-switcher", styles)
+
     def test_state_validation(self):
         server.validate_state(server.EMPTY_STATE)
 

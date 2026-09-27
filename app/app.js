@@ -38,6 +38,7 @@ const elements = {
   manageSettingsToggle: $("#manageSettingsToggle"), semesterSettings: $("#semesterSettings"),
   backupFile: $("#backupFile"), exportBackupBtn: $("#exportBackup"), importBackupBtn: $("#importBackup"),
   eventCountdown: $("#eventCountdown"), periodEditor: $("#periodEditor"), eventEditor: $("#eventEditor"),
+  semesterSelect: $("#semesterSelect"), addSemester: $("#addSemester"), deleteSemester: $("#deleteSemester"),
   todayButton: $("#todayButton"), weekSelect: $("#weekSelect"), courseDialog: $("#courseDialog"), courseForm: $("#courseForm"),
   deleteCourse: $("#deleteCourse"), formError: $("#formError"), toast: $("#toast"),
   infoDialog: $("#infoDialog"), lanUrls: $("#lanUrls"), excelFile: $("#excelFile"),
@@ -94,6 +95,47 @@ function normalizeStateDates() {
   state.semester.weekOneStart ||= legacyFirstDay || "2026-08-31";
   state.semester.classStartDate ||= legacyFirstDay || state.semester.weekOneStart;
   delete state.semester.firstDay;
+}
+
+function applyActiveSemester() {
+  const active = state.semesters.find((item) => item.id === state.activeSemesterId) || state.semesters[0];
+  state.activeSemesterId = active.id;
+  state.semester = active.semester;
+  state.periods = active.periods || [];
+  state.sessions = active.sessions || [];
+  state.events = active.events || [];
+  normalizeStateDates();
+}
+
+function normalizeState() {
+  normalizeStateDates();
+  if (!Array.isArray(state.semesters) || !state.semesters.length) {
+    const id = `sem-${Date.now()}`;
+    state.semesters = [{id, semester: state.semester, periods: state.periods || [], sessions: state.sessions || [], events: state.events || []}];
+    state.activeSemesterId = id;
+  }
+  state.version = 3;
+  if (!state.semesters.some((item) => item.id === state.activeSemesterId)) {
+    state.activeSemesterId = state.semesters[0].id;
+  }
+  applyActiveSemester();
+}
+
+function syncActiveSemesterEntry() {
+  const entry = (state.semesters || []).find((item) => item.id === state.activeSemesterId);
+  if (entry) {
+    entry.semester = state.semester;
+    entry.periods = state.periods;
+    entry.sessions = state.sessions;
+    entry.events = state.events || [];
+  }
+}
+
+function renderSemesterSwitcher() {
+  if (!state) return;
+  elements.semesterSelect.innerHTML = state.semesters.map((item) =>
+    `<option value="${escapeHtml(item.id)}"${item.id === state.activeSemesterId ? " selected" : ""}>${escapeHtml(item.semester.name || "未命名学期")}</option>`).join("");
+  elements.deleteSemester.disabled = state.semesters.length <= 1;
 }
 
 function localDateKey(date) {
@@ -168,7 +210,7 @@ function render() {
   renderTermStatus();
   renderWeekHeader();
   renderDays();
-  renderCourses();
+  renderDayTimeline();
   renderWeekGrid();
   renderMonthView();
   renderManageList();
@@ -214,7 +256,7 @@ function refreshSystemClock() {
   const minuteKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${now.getMinutes()}`;
   if (minuteKey !== lastClockMinute) {
     lastClockMinute = minuteKey;
-    renderCourses();
+    renderDayTimeline();
     if (activeView === "month") renderMonthView();
     if (activeView === "week") {
       if (document.getElementById("weekNowLine")) positionWeekNowLine();
@@ -278,19 +320,91 @@ function courseCard(session, courseDate = dateFor(selectedWeek, selectedDay), ed
   </article>`;
 }
 
-function renderCourses() {
+function dayTimelineBlock(session, rowFor, date) {
+  const color = session.color || DEFAULT_COLOR;
+  const status = liveStatus(session, date);
+  const startRow = rowFor.get(session.periodStart) ?? (rowFor.size + 1);
+  const endRow = rowFor.get(session.periodEnd) ?? startRow;
+  const span = Math.max(1, endRow - startRow + 1);
+  return `<button class="day-block edit-course" type="button" data-id="${escapeHtml(session.id)}"
+    style="grid-column:2;grid-row:${startRow}/span ${span};--course-color:${escapeHtml(color)};--course-soft:${hexToRgba(color, 0.16)}">
+    <span class="day-block-top"><strong>${escapeHtml(session.name)}</strong>${status ? `<span class="status-pill">${status}</span>` : ""}</span>
+    <span>${escapeHtml(periodTime(session))}${session.location ? ` · ${escapeHtml(session.location)}` : ""}</span>
+    ${span >= 2 && session.teacher ? `<span>${escapeHtml(session.teacher)}</span>` : ""}
+  </button>`;
+}
+
+function positionDayNowLine() {
+  const previous = document.getElementById("dayNowLine");
+  if (previous) previous.remove();
+  if (!elements.courseList.offsetParent) return;
+  const date = dateFor(selectedWeek, selectedDay);
+  const today = new Date();
+  if (date.toDateString() !== today.toDateString() || !state.periods.length) return;
+  const now = today.getHours() * 60 + today.getMinutes();
+  const anchors = [];
+  for (const cell of [...elements.courseList.querySelectorAll(".day-axis")]) {
+    const number = Number(cell.querySelector("strong").textContent);
+    const period = state.periods.find((item) => item.number === number);
+    if (!period || !period.start || !period.end) continue;
+    const [h, m] = period.start.split(":").map(Number);
+    const [eh, em] = period.end.split(":").map(Number);
+    anchors.push({start: h * 60 + m, end: eh * 60 + em, top: cell.offsetTop, height: cell.offsetHeight});
+  }
+  if (!anchors.length || now < anchors[0].start - 20 || now > anchors[anchors.length - 1].end + 20) return;
+  let top = null;
+  for (let index = 0; index < anchors.length; index += 1) {
+    const anchor = anchors[index];
+    if (now >= anchor.start && now <= anchor.end) {
+      top = anchor.top + (now - anchor.start) / (anchor.end - anchor.start || 1) * anchor.height;
+      break;
+    }
+    const next = anchors[index + 1];
+    if (next && now > anchor.end && now < next.start) {
+      top = anchor.top + anchor.height + (now - anchor.end) / (next.start - anchor.end || 1) * (next.top - (anchor.top + anchor.height));
+      break;
+    }
+  }
+  if (top === null) return;
+  const line = document.createElement("div");
+  line.id = "dayNowLine";
+  line.className = "week-now-line day-now-line";
+  elements.courseList.appendChild(line);
+  line.style.top = top + "px";
+}
+
+function renderDayTimeline() {
   const date = dateFor(selectedWeek, selectedDay);
   const today = new Date();
   const actualDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const isActualToday = date.toDateString() === actualDate.toDateString();
   const sessions = sessionsForDate(date);
+  const periods = weekGridPeriods();
+  const rowFor = new Map(periods.map((period, index) => [period.number, index + 1]));
   elements.selectedDateLabel.textContent = `${isActualToday ? "今天" : "课程日期"}：${DAY_NAMES[selectedDay - 1]} · ${formatDate(date, true)}`;
-  const periods = totalPeriods(sessions);
-  elements.classCount.textContent = sessions.length ? `${sessions.length} 门课 · 共 ${periods} 节` : `${isActualToday ? "今天" : "该日"}没有课`;
-  const beforeClassStart = date < parseLocalDate(state.semester.classStartDate);
-  elements.courseList.innerHTML = sessions.length
-    ? sessions.map((session) => courseCard(session, date)).join("")
-    : `<div class="empty-state"><strong>${beforeClassStart ? "尚未到实际开课日期" : `${isActualToday ? "今天" : "该日"}没有课程`}</strong><span>${beforeClassStart ? `实际开课日期为 ${formatDate(parseLocalDate(state.semester.classStartDate), true)}` : "可以安心安排阅读、实验或休息。"}</span></div>`;
+  elements.classCount.textContent = sessions.length
+    ? `${sessions.length} 门课 · 共 ${totalPeriods(sessions)} 节`
+    : `${isActualToday ? "今天" : "该日"}没有课`;
+  const cells = [];
+  for (const period of periods) {
+    const time = period.start && period.end ? `${period.start}–${period.end}` : "";
+    cells.push(`<div class="day-axis" style="grid-row:${rowFor.get(period.number)}"><strong>${period.number}</strong><span>${escapeHtml(time)}</span></div>`);
+  }
+  for (const session of sessions) {
+    cells.push(dayTimelineBlock(session, rowFor, date));
+  }
+  if (!sessions.length) {
+    const beforeClassStart = date < parseLocalDate(state.semester.classStartDate);
+    const title = beforeClassStart ? "尚未到实际开课日期" : `${isActualToday ? "今天" : "该日"}没有课程`;
+    const detail = beforeClassStart
+      ? `实际开课日期为 ${formatDate(parseLocalDate(state.semester.classStartDate), true)}`
+      : "可以安心安排阅读、实验或休息。";
+    cells.push(`<div class="day-empty" style="grid-column:2;grid-row:1 / ${periods.length + 1}"><div class="empty-state"><strong>${title}</strong><span>${detail}</span></div></div>`);
+  }
+  elements.courseList.className = "day-timeline";
+  elements.courseList.style.gridTemplateRows = `repeat(${periods.length}, minmax(52px, auto))`;
+  elements.courseList.innerHTML = cells.join("");
+  positionDayNowLine();
 }
 
 function weekGridPeriods() {
@@ -401,7 +515,7 @@ function nowLineTop() {
 
 function positionWeekNowLine() {
   const line = document.getElementById("weekNowLine");
-  if (!line) return;
+  if (!line || !elements.weekGrid.offsetParent) return;
   const top = nowLineTop();
   if (top === null) {
     line.remove();
@@ -464,6 +578,7 @@ function renderManageChips() {
 }
 
 function renderManageList() {
+  renderSemesterSwitcher();
   const filtered = manageFilterDay
     ? state.sessions.filter((item) => item.day === manageFilterDay)
     : state.sessions;
@@ -716,7 +831,9 @@ async function importExcel(file) {
 
     const previous = state;
     state = {
-      version: 2,
+      version: 3,
+      activeSemesterId: previous.activeSemesterId,
+      semesters: previous.semesters,
       semester: {
         ...state.semester, name: imported.title,
         totalWeeks: imported.totalWeeks, sourceFile: file.name,
@@ -726,6 +843,12 @@ async function importExcel(file) {
       sessions: imported.sessions,
       events: (previous.events || []).filter((item) => item && item.name && /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")))
     };
+    if (!Array.isArray(state.semesters) || !state.semesters.length) {
+      const id = `sem-${Date.now()}`;
+      state.semesters = [{id, semester: state.semester, periods: state.periods, sessions: state.sessions, events: state.events}];
+      state.activeSemesterId = id;
+    }
+    syncActiveSemesterEntry();
     try {
       await saveState(`已导入 ${courseCount} 门课程`);
     } catch (error) {
@@ -803,6 +926,8 @@ function switchView(view) {
   if (view === "month") renderMonthView();
   if (view === "manage") renderManageList();
   if (view === "notification") refreshNotificationSettings();
+  positionWeekNowLine();
+  positionDayNowLine();
   window.scrollTo({top: 0, behavior: "smooth"});
 }
 
@@ -904,9 +1029,9 @@ function applyShortcutTarget(target) {
 function exportBackup() {
   if (!state) return;
   const payload = {
-    app: "course-schedule", version: 2, exportedAt: new Date().toISOString(),
+    app: "course-schedule", version: 3, exportedAt: new Date().toISOString(),
     semester: state.semester, periods: state.periods, sessions: state.sessions,
-    events: state.events || []
+    events: state.events || [], activeSemesterId: state.activeSemesterId, semesters: state.semesters || []
   };
   const json = JSON.stringify(payload, null, 2);
   if (window.CourseAppNative?.exportBackup) {
@@ -940,8 +1065,8 @@ function validateBackupState(candidate) {
       throw new Error(`第 ${index + 1} 条课程数据不完整`);
     }
   });
-  return {
-    version: 2,
+  const normalized = {
+    version: 3,
     semester: {
       name: String(semester.name || "课程表"), weekOneStart: semester.weekOneStart,
       classStartDate: semester.classStartDate, totalWeeks: Number(semester.totalWeeks) || 19,
@@ -952,6 +1077,12 @@ function validateBackupState(candidate) {
     sessions: candidate.sessions,
     events: Array.isArray(candidate.events) ? candidate.events : []
   };
+  if (Array.isArray(candidate.semesters) && candidate.semesters.length) {
+    normalized.semesters = candidate.semesters.filter((item) => item && item.id && item.semester);
+    normalized.activeSemesterId = candidate.semesters.some((item) => item.id === candidate.activeSemesterId)
+      ? candidate.activeSemesterId : normalized.semesters[0].id;
+  }
+  return normalized;
 }
 
 async function importBackupFile(file) {
@@ -1175,7 +1306,7 @@ function bindEvents() {
   elements.dayStrip.addEventListener("click", (event) => {
     const button = event.target.closest("[data-day]");
     if (!button) return;
-    selectedDay = Number(button.dataset.day); renderDays(); renderCourses();
+    selectedDay = Number(button.dataset.day); renderDays(); renderDayTimeline();
   });
   $("#previousMonth").addEventListener("click", () => {
     visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1);
@@ -1224,6 +1355,38 @@ function bindEvents() {
   elements.importBackupBtn.addEventListener("click", () => elements.backupFile.click());
   elements.backupFile.addEventListener("change", () => {
     importBackupFile(elements.backupFile.files[0]).finally(() => { elements.backupFile.value = ""; });
+  });
+  elements.semesterSelect.addEventListener("change", async () => {
+    state.activeSemesterId = elements.semesterSelect.value;
+    applyActiveSemester();
+    render();
+    try { await saveState("已切换学期"); } catch (error) {}
+  });
+  elements.addSemester.addEventListener("click", async () => {
+    if (state.semesters.length >= 20) return showToast("学期数量已达上限（20 个）");
+    const name = prompt("新学期名称（如：2026-2027 春季学期）", "新学期");
+    if (name === null) return;
+    const id = `sem-${Date.now()}`;
+    state.semesters.push({
+      id,
+      semester: {name: name.trim() || "新学期", weekOneStart: "2026-08-31", classStartDate: "2026-08-31", totalWeeks: 19, campus: ""},
+      periods: [], sessions: [], events: []
+    });
+    state.activeSemesterId = id;
+    applyActiveSemester();
+    render();
+    try { await saveState("新学期已创建"); } catch (error) {}
+  });
+  elements.deleteSemester.addEventListener("click", async () => {
+    if (state.semesters.length <= 1) return showToast("至少保留一个学期");
+    const active = state.semesters.find((item) => item.id === state.activeSemesterId);
+    if (!confirm(`确定删除「${active.semester.name || "未命名学期"}」及其 ${active.sessions.length} 条课程吗？此操作不可恢复。`)) return;
+    if (!confirm("再次确认：删除后无法找回。")) return;
+    state.semesters = state.semesters.filter((item) => item.id !== state.activeSemesterId);
+    state.activeSemesterId = state.semesters[0].id;
+    applyActiveSemester();
+    render();
+    try { await saveState("学期已删除"); } catch (error) {}
   });
   elements.periodEditor.addEventListener("click", (event) => {
     if (event.target.closest("#addPeriod")) {
@@ -1347,7 +1510,7 @@ async function initialize() {
     state = JSON.parse(cached);
     showToast("当前为离线只读缓存");
   }
-  normalizeStateDates();
+  normalizeState();
   const position = teachingPosition();
   selectedWeek = position.week;
   selectedDay = position.day;

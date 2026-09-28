@@ -40,11 +40,18 @@ const elements = {
   exportIcsBtn: $("#exportIcs"), exportWeekImageBtn: $("#exportWeekImage"),
   eventCountdown: $("#eventCountdown"), periodEditor: $("#periodEditor"), eventEditor: $("#eventEditor"),
   semesterSelect: $("#semesterSelect"), addSemester: $("#addSemester"), deleteSemester: $("#deleteSemester"),
+  diaryMonthLabel: $("#diaryMonthLabel"), diaryPrevMonth: $("#diaryPrevMonth"), diaryNextMonth: $("#diaryNextMonth"),
   todayButton: $("#todayButton"), weekSelect: $("#weekSelect"), courseDialog: $("#courseDialog"), courseForm: $("#courseForm"),
   deleteCourse: $("#deleteCourse"), formError: $("#formError"), toast: $("#toast"),
   infoDialog: $("#infoDialog"), lanUrls: $("#lanUrls"), excelFile: $("#excelFile"),
   weekOneStart: $("#weekOneStart"), classStartDate: $("#classStartDate"), teachingDateError: $("#teachingDateError"),
-  notificationView: $("#notificationView"), notificationEnabled: $("#notificationEnabled"),
+  diaryView: $("#diaryView"), diaryLockBtn: $("#diaryLockBtn"), diaryLockCard: $("#diaryLockCard"),
+  diaryLockTitle: $("#diaryLockTitle"), diaryPinInput: $("#diaryPinInput"), diaryUnlock: $("#diaryUnlock"),
+  diaryResetPin: $("#diaryResetPin"), diaryPinStatus: $("#diaryPinStatus"), diaryContent: $("#diaryContent"),
+  diarySearch: $("#diarySearch"), diaryCalendar: $("#diaryCalendar"), diarySearchResults: $("#diarySearchResults"),
+  diaryDateLabel: $("#diaryDateLabel"), diaryQuoteCourses: $("#diaryQuoteCourses"), diaryMood: $("#diaryMood"),
+  diaryTitle: $("#diaryTitle"), diaryText: $("#diaryText"), diaryDelete: $("#diaryDelete"), diarySave: $("#diarySave"),
+  notificationEnabled: $("#notificationEnabled"),
   notificationLeadMinutes: $("#notificationLeadMinutes"), notificationShowDetails: $("#notificationShowDetails"),
   usageNoticeDialog: $("#usageNoticeDialog"), startupUpdateDialog: $("#startupUpdateDialog")
 };
@@ -105,6 +112,7 @@ function applyActiveSemester() {
   state.periods = active.periods || [];
   state.sessions = active.sessions || [];
   state.events = active.events || [];
+  state.diaries = Array.isArray(state.diaries) ? state.diaries : [];
   normalizeStateDates();
 }
 
@@ -541,9 +549,10 @@ function renderMonthView() {
     const outside = date.getMonth() !== month;
     const dateKey = localDateKey(date);
     const label = `${formatDate(date, true)}，${sessions.length ? `${sessions.length}门课程` : "没有课程"}`;
+    const diaryMark = diaryEntryFor(dateKey)?.mood ? `<span class="month-diary-mark">${DIARY_MOODS[diaryEntryFor(dateKey).mood] || "✍"}</span>` : "";
     return `<button class="month-day ${outside ? "outside-month" : ""} ${dateKey === todayKey ? "today" : ""}" type="button" data-date="${dateKey}" aria-label="${label}">
       <span class="month-day-number">${date.getDate()}</span>
-      ${sessions.length ? `<span class="month-course-marker">${sessions.length}</span>` : ""}
+      ${sessions.length ? `<span class="month-course-marker">${sessions.length}</span>` : ""}${diaryMark}
     </button>`;
   }).join("");
 }
@@ -921,11 +930,12 @@ function switchView(view) {
   elements.weekView.classList.toggle("hidden", view !== "week");
   elements.monthView.classList.toggle("hidden", view !== "month");
   elements.manageView.classList.toggle("hidden", view !== "manage");
-  elements.notificationView.classList.toggle("hidden", view !== "notification");
+  elements.diaryView.classList.toggle("hidden", view !== "diary");
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   if (view === "week") renderWeekGrid();
   if (view === "month") renderMonthView();
   if (view === "manage") renderManageList();
+  if (view === "diary") renderDiary();
   if (view === "notification") refreshNotificationSettings();
   positionWeekNowLine();
   positionDayNowLine();
@@ -1434,6 +1444,138 @@ async function exportWeekImage() {
   showToast("周课表图片已生成");
 }
 
+const DIARY_MOODS = ["", "😄", "🙂", "😐", "😔", "😖"];
+const DIARY_PIN_KEY = "course-app-diary-pin";
+const DIARY_LOCK_KEY = "course-app-diary-lock";
+let diaryState = {
+  selectedDate: localDateKey(new Date()), month: new Date(),
+  mood: 0, search: "", unlocked: false, cardMode: "hidden"
+};
+
+function diaryEntryFor(dateKey) {
+  return (state.diaries || []).find((item) => item.date === dateKey) || null;
+}
+
+function isDiaryLocked() {
+  return Boolean(localStorage.getItem(DIARY_PIN_KEY)) && !diaryState.unlocked;
+}
+
+async function diaryPinHash(pin, salt) {
+  const text = salt + ":" + pin;
+  try {
+    if (window.crypto?.subtle) {
+      const digest = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+      return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+  } catch (error) { /* 非安全上下文退回轻量散列 */ }
+  let hash = 5381;
+  for (const char of text) hash = ((hash << 5) + hash + char.charCodeAt(0)) >>> 0;
+  return "djb2-" + hash.toString(16);
+}
+
+function renderDiary() {
+  if (!state) return;
+  const pinEnabled = Boolean(localStorage.getItem(DIARY_PIN_KEY));
+  const locked = isDiaryLocked();
+  const showCard = locked || (!pinEnabled && diaryState.cardMode === "setup");
+  elements.diaryLockCard.classList.toggle("hidden", !showCard);
+  elements.diaryContent.classList.toggle("hidden", locked);
+  if (showCard) {
+    elements.diaryLockTitle.textContent = locked ? "日记已锁定" : "设置日记锁";
+    elements.diaryUnlock.textContent = locked ? "解锁" : "启用日记锁";
+    if (!locked) elements.diaryPinStatus.textContent = "设置 4 位数字 PIN，仅锁住日记视图";
+  }
+  if (locked) return;
+  renderDiaryCalendar();
+  loadDiaryEntry();
+  renderDiarySearchResults();
+}
+
+function renderDiaryCalendar() {
+  const year = diaryState.month.getFullYear();
+  const month = diaryState.month.getMonth();
+  elements.diaryMonthLabel.textContent = `${year}年${month + 1}月`;
+  elements.diaryCalendar.innerHTML = monthGridDates(year, month).map((date) => {
+    const key = localDateKey(date);
+    const entry = diaryEntryFor(key);
+    const outside = date.getMonth() !== month ? " outside-month" : "";
+    const selected = key === diaryState.selectedDate ? " selected" : "";
+    const mood = entry && entry.mood ? `<span class="diary-mood">${DIARY_MOODS[entry.mood] || "✍"}</span>` : "";
+    return `<button class="diary-day${selected}${outside}" type="button" data-date="${key}"><span>${date.getDate()}</span>${mood}</button>`;
+  }).join("");
+}
+
+function loadDiaryEntry() {
+  const key = diaryState.selectedDate;
+  const entry = diaryEntryFor(key);
+  const date = parseLocalDate(key);
+  const position = teachingPosition();
+  elements.diaryDateLabel.textContent = `${key} ${DAY_NAMES[date.getDay() === 0 ? 6 : date.getDay() - 1]}`
+    + (position.phase === "in" ? ` · 第 ${position.week} 教学周` : "");
+  elements.diaryTitle.value = entry?.title || "";
+  elements.diaryText.value = entry?.text || "";
+  diaryState.mood = entry?.mood || 0;
+  [...elements.diaryMood.children].forEach((button) => {
+    button.classList.toggle("active", Number(button.dataset.mood) === diaryState.mood);
+  });
+  elements.diaryDelete.classList.toggle("hidden", !entry);
+}
+
+function renderDiarySearchResults() {
+  const query = diaryState.search.trim().toLowerCase();
+  if (!query) {
+    elements.diarySearchResults.innerHTML = "";
+    return;
+  }
+  const matches = (state.diaries || [])
+    .filter((item) => `${item.title || ""}${item.text || ""}`.toLowerCase().includes(query))
+    .sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 20);
+  elements.diarySearchResults.innerHTML = matches.length
+    ? matches.map((item) => `<button class="diary-result" type="button" data-date="${escapeHtml(item.date)}"><strong>${escapeHtml(item.date)}${item.title ? " · " + escapeHtml(item.title) : ""}</strong><span>${escapeHtml(String(item.text || "").replace(/\s+/g, " ").slice(0, 50))}</span></button>`).join("")
+    : '<p class="editor-empty">没有匹配的日记</p>';
+}
+
+function saveDiary() {
+  const key = diaryState.selectedDate;
+  const title = elements.diaryTitle.value.trim();
+  const text = elements.diaryText.value;
+  const mood = diaryState.mood;
+  const existing = diaryEntryFor(key);
+  if (!mood && !title && !text.trim()) return showToast("选择心情或写点什么再保存");
+  if (existing) {
+    existing.title = title;
+    existing.text = text;
+    existing.mood = mood;
+    existing.updatedAt = Date.now();
+  } else {
+    if ((state.diaries || []).length >= 2000) return showToast("日记已达 2000 篇上限");
+    state.diaries = [...(state.diaries || []), {id: `diary-${Date.now()}`, date: key, mood, title, text, updatedAt: Date.now()}];
+  }
+  saveState("日记已保存").then(() => {
+    loadDiaryEntry();
+    renderDiaryCalendar();
+  }).catch(() => {});
+}
+
+function deleteDiary() {
+  const key = diaryState.selectedDate;
+  if (!diaryEntryFor(key)) return;
+  if (!confirm(`删除 ${key} 的日记？此操作不可恢复。`)) return;
+  state.diaries = (state.diaries || []).filter((item) => item.date !== key);
+  saveState("日记已删除").then(() => {
+    loadDiaryEntry();
+    renderDiaryCalendar();
+  }).catch(() => {});
+}
+
+function quoteTodayCourses() {
+  const sessions = sessionsForDate(parseLocalDate(diaryState.selectedDate));
+  if (!sessions.length) return showToast("当天没有课程");
+  const lines = sessions.map((session) =>
+    `· ${periodTime(session)} ${session.name}${session.location ? ` @${session.location}` : ""}`);
+  elements.diaryText.value = `今天的课：\n${lines.join("\n")}\n\n` + elements.diaryText.value;
+}
+
 window.onNativeShortcut = applyShortcutTarget;
 
 window.onNativeNotificationSettingsChanged = refreshNotificationSettings;
@@ -1621,11 +1763,91 @@ function bindEvents() {
     elements.manageSettingsToggle.classList.toggle("open", manageSettingsOpen);
     elements.manageSettingsToggle.setAttribute("aria-expanded", String(manageSettingsOpen));
     elements.semesterSettings.classList.toggle("hidden", !manageSettingsOpen);
-    if (manageSettingsOpen) refreshSettingsEditors();
+    if (manageSettingsOpen) {
+      refreshSettingsEditors();
+      refreshNotificationSettings();
+    }
   });
   elements.exportBackupBtn.addEventListener("click", exportBackup);
   elements.exportIcsBtn.addEventListener("click", exportIcs);
   elements.exportWeekImageBtn.addEventListener("click", exportWeekImage);
+  elements.diaryLockBtn.addEventListener("click", () => {
+    if (!localStorage.getItem(DIARY_PIN_KEY)) {
+      diaryState.cardMode = diaryState.cardMode === "setup" ? "hidden" : "setup";
+    } else if (diaryState.unlocked) {
+      diaryState.unlocked = false;
+      localStorage.removeItem(DIARY_LOCK_KEY);
+    }
+    renderDiary();
+  });
+  elements.diaryUnlock.addEventListener("click", async () => {
+    const pin = elements.diaryPinInput.value;
+    if (!/^\d{4}$/.test(pin)) return elements.diaryPinStatus.textContent = "请输入 4 位数字 PIN";
+    const stored = JSON.parse(localStorage.getItem(DIARY_PIN_KEY) || "null");
+    if (stored) {
+      const hash = await diaryPinHash(pin, stored.salt);
+      if (hash !== stored.hash) return elements.diaryPinStatus.textContent = "PIN 不正确";
+      diaryState.unlocked = true;
+      showToast("已解锁");
+    } else {
+      const salt = Math.random().toString(16).slice(2, 10);
+      localStorage.setItem(DIARY_PIN_KEY, JSON.stringify({salt, hash: await diaryPinHash(pin, salt)}));
+      diaryState.unlocked = true;
+      diaryState.cardMode = "hidden";
+      showToast("日记锁已启用");
+    }
+    elements.diaryPinInput.value = "";
+    renderDiary();
+  });
+  elements.diaryResetPin.addEventListener("click", () => {
+    if (!confirm("将清除 PIN 并保持日记可见，确定？")) return;
+    localStorage.removeItem(DIARY_PIN_KEY);
+    localStorage.removeItem(DIARY_LOCK_KEY);
+    diaryState.unlocked = true;
+    diaryState.cardMode = "hidden";
+    showToast("PIN 已清除");
+    renderDiary();
+  });
+  elements.diarySearch.addEventListener("input", () => {
+    diaryState.search = elements.diarySearch.value;
+    renderDiarySearchResults();
+  });
+  elements.diaryCalendar.addEventListener("click", (event) => {
+    const day = event.target.closest("[data-date]");
+    if (!day) return;
+    diaryState.selectedDate = day.dataset.date;
+    diaryState.month = parseLocalDate(day.dataset.date);
+    renderDiaryCalendar();
+    loadDiaryEntry();
+  });
+  elements.diaryQuoteCourses.addEventListener("click", quoteTodayCourses);
+  elements.diaryMood.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-mood]");
+    if (!button) return;
+    diaryState.mood = Number(button.dataset.mood) === diaryState.mood ? 0 : Number(button.dataset.mood);
+    [...elements.diaryMood.children].forEach((item) => {
+      item.classList.toggle("active", Number(item.dataset.mood) === diaryState.mood);
+    });
+  });
+  elements.diarySave.addEventListener("click", saveDiary);
+  elements.diaryDelete.addEventListener("click", deleteDiary);
+  elements.diaryPrevMonth.addEventListener("click", () => {
+    diaryState.month = new Date(diaryState.month.getFullYear(), diaryState.month.getMonth() - 1, 1);
+    renderDiaryCalendar();
+  });
+  elements.diaryNextMonth.addEventListener("click", () => {
+    diaryState.month = new Date(diaryState.month.getFullYear(), diaryState.month.getMonth() + 1, 1);
+    renderDiaryCalendar();
+  });
+  elements.diarySearchResults.addEventListener("click", (event) => {
+    const result = event.target.closest("[data-date]");
+    if (!result) return;
+    diaryState.selectedDate = result.dataset.date;
+    diaryState.month = parseLocalDate(result.dataset.date);
+    diaryState.search = "";
+    elements.diarySearch.value = "";
+    renderDiary();
+  });
   elements.importBackupBtn.addEventListener("click", () => elements.backupFile.click());
   elements.backupFile.addEventListener("change", () => {
     importBackupFile(elements.backupFile.files[0]).finally(() => { elements.backupFile.value = ""; });

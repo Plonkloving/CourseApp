@@ -73,7 +73,7 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("prefers-color-scheme: dark", html)
         self.assertIn("prefers-reduced-motion: reduce", styles)
         self.assertIn('name="theme-color" content="#243F7A"', html)
-        self.assertIn('CACHE_NAME = "course-app-v14"', service_worker)
+        self.assertIn('CACHE_NAME = "course-app-v15"', service_worker)
 
     def test_android_asset_entry_uses_classic_script(self):
         html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
@@ -204,7 +204,8 @@ class ScheduleBehaviorTests(unittest.TestCase):
         manifest = (root / "AndroidManifest.xml").read_text(encoding="utf-8")
         html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
-        self.assertIn('id="notificationView"', html)
+        self.assertIn('id="reminderSettings"', html)
+        self.assertNotIn('id="notificationView"', html)
         self.assertIn("refreshNotificationSettings", script)
         self.assertIn("openCourseDateFromNotification", script)
         self.assertIn("CourseNotificationScheduler.reschedule(context)", activity)
@@ -461,6 +462,23 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("DTSTART:", script)
         self.assertIn("BEGIN:VCALENDAR", script)
         self.assertIn("exportFile", script)
+
+    def test_diary_feature_is_local_and_gated(self):
+        html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+        assistant = (ROOT / "app" / "ai-assistant.js").read_text(encoding="utf-8")
+        self.assertIn('data-view="diary"', html)
+        self.assertIn('id="diaryCalendar"', html)
+        self.assertIn('id="diaryMood"', html)
+        self.assertIn('id="diaryPinInput"', html)
+        self.assertIn('id="diaryQuoteCourses"', html)
+        self.assertIn("function renderDiary()", script)
+        self.assertIn("function saveDiary()", script)
+        self.assertIn("state.diaries", script)
+        self.assertIn("crypto.subtle", script)
+        self.assertIn("引用当天课程", html)
+        self.assertIn("function quoteTodayCourses()", script)
+        self.assertNotIn("diaries", assistant)
 
     def test_state_validation(self):
         server.validate_state(server.EMPTY_STATE)

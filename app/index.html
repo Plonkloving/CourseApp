@@ -35,6 +35,8 @@
         <symbol id="i-send" viewBox="0 0 24 24"><path d="M4.2 11.2L19.5 4.8l-4.2 14.4-3.4-5.5-7.7-2.5z" fill="currentColor" stroke="none"/></symbol>
         <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none"/></symbol>
         <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3.5v2.4M12 18.1v2.4M3.5 12h2.4M18.1 12h2.4M6 6l1.7 1.7M16.3 16.3L18 18M18 6l-1.7 1.7M7.7 16.3L6 18"/></symbol>
+        <symbol id="i-diary" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9.5 4v16M12.5 8.5h4M12.5 12h4"/></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/></symbol>
       </defs>
     </svg>
     <div class="app-shell">
@@ -139,7 +141,7 @@
             <button class="text-button" id="manageToggleAll" type="button">全部展开</button>
           </div>
           <button class="manage-settings-toggle" id="manageSettingsToggle" type="button" aria-expanded="false">
-            <span>学期设置与外观</span>
+            <span>设置</span>
             <span class="manage-caret">›</span>
           </button>
           <div class="semester-settings hidden" id="semesterSettings">
@@ -171,51 +173,104 @@
             <div id="periodEditor"></div>
             <p class="editor-title">倒计时事件</p>
             <div id="eventEditor"></div>
+            <div id="reminderSettings" class="android-only hidden">
+              <p class="editor-title">课程提醒</p>
+              <p class="manage-note">提醒默认关闭。开启后仅在本机计算每门课下一次有效上课时间，不会上传课程信息。</p>
+              <div class="notification-card">
+                <h3>提醒设置</h3>
+                <label class="setting-row">
+                  <span><strong>启用课程提醒</strong><small>课程、日期或节次变化后自动重新安排</small></span>
+                  <input id="notificationEnabled" type="checkbox" />
+                </label>
+                <label class="field">提前提醒
+                  <select id="notificationLeadMinutes">
+                    <option value="0">上课时</option>
+                    <option value="5">提前 5 分钟</option>
+                    <option value="10">提前 10 分钟</option>
+                    <option value="15">提前 15 分钟</option>
+                    <option value="30">提前 30 分钟</option>
+                  </select>
+                </label>
+                <label class="setting-row">
+                  <span><strong>显示课程详情</strong><small>在通知和锁屏中显示课程名称、时间与地点</small></span>
+                  <input id="notificationShowDetails" type="checkbox" />
+                </label>
+                <button class="primary-button" id="saveNotificationSettings" type="button">保存提醒设置</button>
+              </div>
+              <div class="notification-card">
+                <h3>系统权限</h3>
+                <p class="notification-status" id="notificationPermissionStatus">正在读取通知权限…</p>
+                <p class="notification-status" id="exactAlarmStatus">正在读取精确闹钟权限…</p>
+                <div class="notification-actions">
+                  <button class="secondary-button compact" id="requestNotificationPermission" type="button">申请通知权限</button>
+                  <button class="secondary-button compact" id="openExactAlarmSettings" type="button">精确闹钟设置</button>
+                  <button class="secondary-button compact" id="sendTestNotification" type="button">发送测试通知</button>
+                </div>
+                <small>未获得精确闹钟权限时会自动降级，提醒可能存在几分钟偏差。没有设置具体开始时间的节次不会安排提醒；vivo 手机还需允许本应用自启动和后台运行。</small>
+              </div>
+            </div>
           </div>
           <div class="manage-list" id="manageList"></div>
         </section>
 
-        <section class="notification-view hidden" id="notificationView">
+        <section class="diary-view hidden" id="diaryView">
           <div class="manage-heading">
             <div>
-              <p class="eyebrow">Android · 系统通知</p>
-              <h2>课程提醒</h2>
+              <p class="eyebrow">只保存在本机</p>
+              <h2>日记</h2>
             </div>
-          </div>
-          <p class="manage-note">提醒默认关闭。开启后仅在本机计算每门课下一次有效上课时间，不会上传课程信息。</p>
-
-          <div class="notification-card">
-            <h3>提醒设置</h3>
-            <label class="setting-row">
-              <span><strong>启用课程提醒</strong><small>课程、日期或节次变化后自动重新安排</small></span>
-              <input id="notificationEnabled" type="checkbox" />
-            </label>
-            <label class="field">提前提醒
-              <select id="notificationLeadMinutes">
-                <option value="0">上课时</option>
-                <option value="5">提前 5 分钟</option>
-                <option value="10">提前 10 分钟</option>
-                <option value="15">提前 15 分钟</option>
-                <option value="30">提前 30 分钟</option>
-              </select>
-            </label>
-            <label class="setting-row">
-              <span><strong>显示课程详情</strong><small>在通知和锁屏中显示课程名称、时间与地点</small></span>
-              <input id="notificationShowDetails" type="checkbox" />
-            </label>
-            <button class="primary-button" id="saveNotificationSettings" type="button">保存提醒设置</button>
+            <button class="icon-button" id="diaryLockBtn" type="button" aria-label="日记锁设置"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></button>
           </div>
 
-          <div class="notification-card">
-            <h3>系统权限</h3>
-            <p class="notification-status" id="notificationPermissionStatus">正在读取通知权限…</p>
-            <p class="notification-status" id="exactAlarmStatus">正在读取精确闹钟权限…</p>
+          <div class="notification-card hidden" id="diaryLockCard">
+            <h3 id="diaryLockTitle">日记已锁定</h3>
+            <label class="field">输入 4 位 PIN
+              <input id="diaryPinInput" type="password" maxlength="4" inputmode="numeric" autocomplete="off" />
+            </label>
             <div class="notification-actions">
-              <button class="secondary-button compact" id="requestNotificationPermission" type="button">申请通知权限</button>
-              <button class="secondary-button compact" id="openExactAlarmSettings" type="button">精确闹钟设置</button>
-              <button class="secondary-button compact" id="sendTestNotification" type="button">发送测试通知</button>
+              <button class="secondary-button compact" id="diaryUnlock" type="button">解锁</button>
+              <button class="secondary-button compact" id="diaryResetPin" type="button">忘记 PIN</button>
             </div>
-            <small>未获得精确闹钟权限时会自动降级，提醒可能存在几分钟偏差。没有设置具体开始时间的节次不会安排提醒；vivo 手机还需允许本应用自启动和后台运行。</small>
+            <p class="notification-status" id="diaryPinStatus"></p>
+          </div>
+
+          <div id="diaryContent">
+            <div class="diary-toolbar">
+              <label class="field">搜索日记
+                <input id="diarySearch" placeholder="搜索标题、正文或 #标签" />
+              </label>
+            </div>
+            <div class="diary-grid-wrap">
+              <div class="diary-month-bar">
+                <button class="icon-button" id="diaryPrevMonth" type="button" aria-label="上个月">‹</button>
+                <strong id="diaryMonthLabel"></strong>
+                <button class="icon-button" id="diaryNextMonth" type="button" aria-label="下个月">›</button>
+              </div>
+              <div class="month-weekdays" aria-hidden="true">
+                <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+              </div>
+              <div class="month-grid" id="diaryCalendar"></div>
+            </div>
+            <div class="diary-results" id="diarySearchResults"></div>
+            <div class="diary-editor notification-card">
+              <div class="diary-editor-date">
+                <strong id="diaryDateLabel"></strong>
+                <button class="text-button" id="diaryQuoteCourses" type="button">引用当天课程</button>
+              </div>
+              <div class="mood-row" id="diaryMood">
+                <button class="mood-btn" type="button" data-mood="1" aria-label="很差">😄</button>
+                <button class="mood-btn" type="button" data-mood="2" aria-label="不错">🙂</button>
+                <button class="mood-btn" type="button" data-mood="3" aria-label="一般">😐</button>
+                <button class="mood-btn" type="button" data-mood="4" aria-label="低落">😔</button>
+                <button class="mood-btn" type="button" data-mood="5" aria-label="糟糕">😖</button>
+              </div>
+              <label class="field">标题（可选）<input id="diaryTitle" maxlength="40" /></label>
+              <label class="field">正文<textarea id="diaryText" rows="7" placeholder="写点什么…"></textarea></label>
+              <div class="diary-editor-actions">
+                <button class="danger-button" id="diaryDelete" type="button">删除</button>
+                <button class="primary-button" id="diarySave" type="button">保存日记</button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -225,8 +280,8 @@
         <button class="nav-item active" data-view="schedule"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-cal-day"/></svg></span>日课表</button>
         <button class="nav-item" data-view="week"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg></span>周课表</button>
         <button class="nav-item" data-view="month"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-cal-month"/></svg></span>月课表</button>
+        <button class="nav-item" data-view="diary"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-diary"/></svg></span>日记</button>
         <button class="nav-item" data-view="manage"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></span>课程管理</button>
-        <button class="nav-item android-only hidden" data-view="notification"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg></span>课程提醒</button>
       </nav>
     </div>
 

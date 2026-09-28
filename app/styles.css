@@ -184,6 +184,9 @@ main { padding-bottom: calc(108px + var(--safe-bottom)); }
 .diary-editor-actions { display: flex; justify-content: space-between; gap: 8px; }
 .month-diary-mark { position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%); font-size: 9px; line-height: 1; }
 #diaryText { width: 100%; min-height: 140px; resize: vertical; }
+.attend-chip { position: absolute; right: 5px; bottom: 4px; min-width: 26px; height: 18px; padding: 0 5px; border-radius: 999px; border: 1px solid rgba(119,135,170,.35); background: rgba(255,255,255,.72); color: var(--muted); font-size: 10px; font-weight: 800; line-height: 16px; text-align: center; cursor: pointer; }
+.attend-chip.has { border-color: transparent; background: var(--attend-color, #2f6c54); color: white; }
+.day-block > span:not(.day-block-top) { padding-right: 26px; }
 .manage-group { display: grid; gap: 6px; }
 .manage-group-head { display: flex; gap: 9px; align-items: center; width: 100%; padding: 10px 12px; border: 1px solid var(--glass-border); border-radius: var(--radius-m); background: var(--glass); color: var(--ink); text-align: left; cursor: pointer; box-shadow: var(--glass-shadow); -webkit-backdrop-filter: blur(var(--glass-blur)); backdrop-filter: blur(var(--glass-blur)); }
 .manage-dot { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--course-color, #3157a4); }
@@ -351,6 +354,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 :root.dark .manage-day-chip { background: rgba(29,40,68,.7); }
 :root.dark .period-row input[type="time"], :root.dark .event-add-row input { background: rgba(29,40,68,.7); color: var(--ink); }
 :root.dark .day-block { border-color: var(--glass-border); }
+:root.dark .attend-chip { background: rgba(29,40,68,.75); }
 :root.dark .diary-day.selected { background: rgba(129,153,222,.18); }
 :root.dark .mood-btn { background: rgba(29,40,68,.7); }
 :root.dark .diary-result { background: rgba(29,40,68,.7); }

@@ -39,6 +39,7 @@ const elements = {
   backupFile: $("#backupFile"), exportBackupBtn: $("#exportBackup"), importBackupBtn: $("#importBackup"),
   exportIcsBtn: $("#exportIcs"), exportWeekImageBtn: $("#exportWeekImage"),
   eventCountdown: $("#eventCountdown"), periodEditor: $("#periodEditor"), eventEditor: $("#eventEditor"),
+  attendanceStats: $("#attendanceStats"),
   semesterSelect: $("#semesterSelect"), addSemester: $("#addSemester"), deleteSemester: $("#deleteSemester"),
   diaryMonthLabel: $("#diaryMonthLabel"), diaryPrevMonth: $("#diaryPrevMonth"), diaryNextMonth: $("#diaryNextMonth"),
   todayButton: $("#todayButton"), weekSelect: $("#weekSelect"), courseDialog: $("#courseDialog"), courseForm: $("#courseForm"),
@@ -113,6 +114,8 @@ function applyActiveSemester() {
   state.sessions = active.sessions || [];
   state.events = active.events || [];
   state.diaries = Array.isArray(state.diaries) ? state.diaries : [];
+  state.attendance = state.attendance && !Array.isArray(state.attendance) && typeof state.attendance === "object"
+    ? state.attendance : {};
   normalizeStateDates();
 }
 
@@ -335,11 +338,16 @@ function dayTimelineBlock(session, rowFor, date) {
   const startRow = rowFor.get(session.periodStart) ?? (rowFor.size + 1);
   const endRow = rowFor.get(session.periodEnd) ?? startRow;
   const span = Math.max(1, endRow - startRow + 1);
+  const attendKey = `${localDateKey(date)}|${session.id}`;
+  const attendStatus = (state.attendance || {})[attendKey] || "";
+  const attendInfo = ATTEND_STATUSES.find((item) => item.key === attendStatus);
+  const attendChip = `<span class="attend-chip${attendInfo ? " has" : ""}" data-attend="${escapeHtml(session.id)}" data-date="${escapeHtml(localDateKey(date))}"${attendInfo ? ` style="--attend-color:${attendInfo.color}"` : ""} role="button" aria-label="考勤">${attendInfo ? attendInfo.label : "记"}</span>`;
   return `<button class="day-block edit-course" type="button" data-id="${escapeHtml(session.id)}"
     style="grid-column:2;grid-row:${startRow}/span ${span};--course-color:${escapeHtml(color)};--course-soft:${hexToRgba(color, 0.16)}">
     <span class="day-block-top"><strong>${escapeHtml(session.name)}</strong>${status ? `<span class="status-pill">${status}</span>` : ""}</span>
     <span>${escapeHtml(periodTime(session))}${session.location ? ` · ${escapeHtml(session.location)}` : ""}</span>
     ${span >= 2 && session.teacher ? `<span>${escapeHtml(session.teacher)}</span>` : ""}
+    ${attendChip}
   </button>`;
 }
 
@@ -410,6 +418,26 @@ function renderDayTimeline() {
       : "可以安心安排阅读、实验或休息。";
     cells.push(`<div class="day-empty" style="grid-column:2;grid-row:1 / ${periods.length + 1}"><div class="empty-state"><strong>${title}</strong><span>${detail}</span></div></div>`);
   }
+  elements.courseList.addEventListener("click", (event) => {
+    const chip = event.target.closest("[data-attend]");
+    if (!chip) return;
+    event.stopPropagation();
+    const key = `${chip.dataset.date}|${chip.dataset.attend}`;
+    const order = ["", ...ATTEND_STATUSES.map((item) => item.key)];
+    const current = (state.attendance || {})[key] || "";
+    const next = order[(order.indexOf(current) + 1) % order.length];
+    if (next) state.attendance = {...(state.attendance || {}), [key]: next};
+    else {
+      const clone = {...(state.attendance || {})};
+      delete clone[key];
+      state.attendance = clone;
+    }
+    const label = (ATTEND_STATUSES.find((item) => item.key === next) || {}).label;
+    saveState(next ? `考勤已记录：${label}` : "考勤已清除").then(() => {
+      renderDayTimeline();
+      renderAttendanceStats();
+    }).catch(() => {});
+  }, true);
   elements.courseList.className = "day-timeline";
   elements.courseList.style.gridTemplateRows = `repeat(${periods.length}, minmax(52px, auto))`;
   elements.courseList.innerHTML = cells.join("");
@@ -598,6 +626,18 @@ function renderManageList() {
     if (!groups.has(key)) groups.set(key, {key, name: session.name, color: session.color || DEFAULT_COLOR, items: []});
     groups.get(key).items.push(session);
   }
+  const attendanceSummary = (items) => {
+    let recorded = 0;
+    let attended = 0;
+    for (const session of items) {
+      for (const [key, status] of Object.entries(state.attendance || {})) {
+        if (!key.endsWith("|" + session.id)) continue;
+        recorded += 1;
+        if (status === "present" || status === "late") attended += 1;
+      }
+    }
+    return recorded ? ` · 出勤 ${attended}/${recorded}` : "";
+  };
   for (const group of groups.values()) {
     group.items.sort((a, b) => a.day - b.day || a.periodStart - b.periodStart || (a.weeks[0] || 0) - (b.weeks[0] || 0));
   }
@@ -617,7 +657,7 @@ function renderManageList() {
       <button class="manage-group-head" type="button" data-group-key="${escapeHtml(group.key)}" aria-expanded="${expanded}">
         <span class="manage-dot" style="--course-color:${escapeHtml(group.color)}"></span>
         <span class="manage-group-name">${escapeHtml(group.name)}</span>
-        <span class="manage-count">${group.items.length} 个安排</span>
+        <span class="manage-count">${group.items.length} 个安排${attendanceSummary(group.items)}</span>
         <span class="manage-caret">${expanded ? "⌄" : "›"}</span>
       </button>
       ${expanded ? `<div class="manage-group-items">${group.items.map((session) => `<button class="manage-item edit-course" data-id="${escapeHtml(session.id)}">
@@ -745,6 +785,8 @@ async function deleteCurrentCourse() {
   if (!session || !confirm(`确定删除“${session.name}”这条上课安排吗？`)) return;
   const original = state.sessions;
   state.sessions = state.sessions.filter((item) => item.id !== id);
+  state.attendance = Object.fromEntries(Object.entries(state.attendance || {})
+    .filter(([key]) => !key.endsWith("|" + id)));
   try {
     await saveState("课程安排已删除");
     elements.courseDialog.close();
@@ -851,7 +893,8 @@ async function importExcel(file) {
       },
       periods: imported.periods,
       sessions: imported.sessions,
-      events: (previous.events || []).filter((item) => item && item.name && /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")))
+      events: (previous.events || []).filter((item) => item && item.name && /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || ""))),
+      attendance: {}
     };
     if (!Array.isArray(state.semesters) || !state.semesters.length) {
       const id = `sem-${Date.now()}`;
@@ -1042,7 +1085,8 @@ function exportBackup() {
   const payload = {
     app: "course-schedule", version: 3, exportedAt: new Date().toISOString(),
     semester: state.semester, periods: state.periods, sessions: state.sessions,
-    events: state.events || [], activeSemesterId: state.activeSemesterId, semesters: state.semesters || []
+    events: state.events || [], attendance: state.attendance || {},
+    activeSemesterId: state.activeSemesterId, semesters: state.semesters || []
   };
   const json = JSON.stringify(payload, null, 2);
   if (window.CourseAppNative?.exportFile) {
@@ -1087,7 +1131,9 @@ function validateBackupState(candidate) {
     },
     periods: candidate.periods,
     sessions: candidate.sessions,
-    events: Array.isArray(candidate.events) ? candidate.events : []
+    events: Array.isArray(candidate.events) ? candidate.events : [],
+    attendance: candidate.attendance && !Array.isArray(candidate.attendance) && typeof candidate.attendance === "object"
+      ? candidate.attendance : {}
   };
   if (Array.isArray(candidate.semesters) && candidate.semesters.length) {
     normalized.semesters = candidate.semesters.filter((item) => item && item.id && item.semester);
@@ -1161,6 +1207,22 @@ function refreshSettingsEditors() {
   if (!manageSettingsOpen) return;
   if (!elements.periodEditor.contains(document.activeElement)) renderPeriodsEditor();
   if (!elements.eventEditor.contains(document.activeElement)) renderEventsEditor();
+  renderAttendanceStats();
+}
+
+function renderAttendanceStats() {
+  if (!state) return;
+  const records = Object.entries(state.attendance || {});
+  if (!records.length) {
+    elements.attendanceStats.innerHTML = "";
+    return;
+  }
+  const counts = {present: 0, late: 0, leave: 0, absent: 0};
+  for (const [, status] of records) {
+    if (counts[status] !== undefined) counts[status] += 1;
+  }
+  elements.attendanceStats.innerHTML = `<p class="editor-title">考勤</p>`
+    + `<p class="editor-empty">已记录 ${records.length} 节：到课 ${counts.present} · 迟到 ${counts.late} · 请假 ${counts.leave} · 旷课 ${counts.absent}</p>`;
 }
 
 window.onNativeBackupResult = function (ok, message) {
@@ -1445,6 +1507,12 @@ async function exportWeekImage() {
 }
 
 const DIARY_MOODS = ["", "😄", "🙂", "😐", "😔", "😖"];
+const ATTEND_STATUSES = [
+  {key: "present", label: "到课", color: "#2f6c54"},
+  {key: "late", label: "迟到", color: "#b07d2b"},
+  {key: "leave", label: "请假", color: "#31549c"},
+  {key: "absent", label: "旷课", color: "#a53d31"}
+];
 const DIARY_PIN_KEY = "course-app-diary-pin";
 const DIARY_LOCK_KEY = "course-app-diary-lock";
 let diaryState = {
@@ -1881,6 +1949,7 @@ function bindEvents() {
     state.semesters = state.semesters.filter((item) => item.id !== state.activeSemesterId);
     state.activeSemesterId = state.semesters[0].id;
     applyActiveSemester();
+    state.attendance = {};
     render();
     try { await saveState("学期已删除"); } catch (error) {}
   });

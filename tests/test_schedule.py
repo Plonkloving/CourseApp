@@ -73,7 +73,7 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("prefers-color-scheme: dark", html)
         self.assertIn("prefers-reduced-motion: reduce", styles)
         self.assertIn('name="theme-color" content="#243F7A"', html)
-        self.assertIn('CACHE_NAME = "course-app-v15"', service_worker)
+        self.assertIn('CACHE_NAME = "course-app-v16"', service_worker)
 
     def test_android_asset_entry_uses_classic_script(self):
         html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
@@ -479,6 +479,20 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("引用当天课程", html)
         self.assertIn("function quoteTodayCourses()", script)
         self.assertNotIn("diaries", assistant)
+
+    def test_attendance_tracking(self):
+        html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "app" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('id="attendanceStats"', html)
+        self.assertIn("function renderAttendanceStats()", script)
+        self.assertIn("state.attendance", script)
+        self.assertIn("data-attend=", script)
+        self.assertIn("考勤已记录", script)
+        self.assertIn("出勤", script)
+        self.assertIn("attendance: {}", script)
+        self.assertIn(".attend-chip", styles)
+        self.assertIn(".attend-chip.has", styles)
 
     def test_state_validation(self):
         server.validate_state(server.EMPTY_STATE)

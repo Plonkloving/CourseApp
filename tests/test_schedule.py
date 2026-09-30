@@ -73,7 +73,7 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("prefers-color-scheme: dark", html)
         self.assertIn("prefers-reduced-motion: reduce", styles)
         self.assertIn('name="theme-color" content="#243F7A"', html)
-        self.assertIn('CACHE_NAME = "course-app-v17"', service_worker)
+        self.assertIn('CACHE_NAME = "course-app-v19"', service_worker)
 
     def test_android_asset_entry_uses_classic_script(self):
         html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
@@ -511,6 +511,24 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn(".stats-card", styles)
         self.assertIn(".stats-bar", styles)
         self.assertIn(".stats-view", styles)
+
+    def test_ai_phase2_tool_calls_with_confirmation(self):
+        script = (ROOT / "app" / "ai-assistant.js").read_text(encoding="utf-8")
+        self.assertIn("const AI_TOOLS", script)
+        for tool in ("add_course", "update_course", "delete_course", "find_free_slots"):
+            self.assertIn(f'"{tool}"', script)
+        self.assertIn("delta.tool_calls", script)
+        self.assertIn('finishReason === "tool_calls"', script)
+        self.assertIn("function parseToolArgs(", script)
+        self.assertIn("function validateToolArgs(", script)
+        self.assertIn("function executeTool(", script)
+        self.assertIn("function renderToolCards()", script)
+        self.assertIn("pushToolResults", script)
+        self.assertIn("MAX_TOOL_ROUNDS", script)
+        self.assertIn("data-tool-confirm", script)
+        self.assertIn("确认执行", script)
+        self.assertIn("syncActiveSemesterEntry", script)
+        self.assertIn("role: \"tool\", tool_call_id", script)
 
     def test_state_validation(self):
         server.validate_state(server.EMPTY_STATE)

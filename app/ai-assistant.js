@@ -28,6 +28,57 @@
   const MAX_RESPONSE_BYTES = 2000000;
   const MAX_HISTORY_MESSAGES = 12;
   const MAX_CONTEXT_SESSIONS = 300;
+  const MAX_TOOL_ROUNDS = 4;
+
+  const AI_TOOLS = [
+    {type: "function", function: {
+      name: "add_course",
+      description: "在当前学期的课表中新增一条上课安排。用户明确表达了添加意图时才调用。",
+      parameters: {type: "object", properties: {
+        name: {type: "string", description: "课程名称"},
+        code: {type: "string", description: "课程代码（可选）"},
+        teacher: {type: "string", description: "教师姓名（可选）"},
+        day: {type: "integer", description: "星期几：1=周一，2=周二 … 7=周日", minimum: 1, maximum: 7},
+        period_start: {type: "integer", description: "开始节次，1-13", minimum: 1, maximum: 13},
+        period_end: {type: "integer", description: "结束节次，必须不小于开始节次", minimum: 1, maximum: 13},
+        weeks: {type: "array", items: {type: "integer"}, description: "上课周次列表，如 [1,3,5]；每周都上则为 [1,2,…,总周数]"},
+        location: {type: "string", description: "上课地点（可选）"},
+        campus: {type: "string", description: "校区（可选）"},
+        notes: {type: "string", description: "备注（可选）"}
+      }, required: ["name", "day", "period_start", "period_end", "weeks"]}
+    }},
+    {type: "function", function: {
+      name: "update_course",
+      description: "修改当前学期中已有的一条上课安排。按课程名称查找；同名多条时用 day 或 period_start 缩小范围。",
+      parameters: {type: "object", properties: {
+        name: {type: "string", description: "要修改的课程名称"},
+        day: {type: "integer", description: "限定星期几（可选，用于区分同名课程）", minimum: 1, maximum: 7},
+        period_start: {type: "integer", description: "限定开始节次（可选）", minimum: 1, maximum: 13},
+        new_day: {type: "integer", description: "新的星期几（可选）", minimum: 1, maximum: 7},
+        new_period_start: {type: "integer", description: "新的开始节次（可选）", minimum: 1, maximum: 13},
+        new_period_end: {type: "integer", description: "新的结束节次（可选）", minimum: 1, maximum: 13},
+        new_weeks: {type: "array", items: {type: "integer"}, description: "新的周次列表（可选）"},
+        new_teacher: {type: "string", description: "新的教师姓名（可选）"},
+        new_location: {type: "string", description: "新的地点（可选）"}
+      }, required: ["name"]}
+    }},
+    {type: "function", function: {
+      name: "delete_course",
+      description: "删除当前学期中已有的一条上课安排。按课程名称查找；同名多条时用 day 或 period_start 缩小范围。",
+      parameters: {type: "object", properties: {
+        name: {type: "string", description: "要删除的课程名称"},
+        day: {type: "integer", description: "限定星期几（可选）", minimum: 1, maximum: 7},
+        period_start: {type: "integer", description: "限定开始节次（可选）", minimum: 1, maximum: 13}
+      }, required: ["name"]}
+    }},
+    {type: "function", function: {
+      name: "find_free_slots",
+      description: "查询指定星期几当前周有哪些节次空闲。只读，不需要用户确认。",
+      parameters: {type: "object", properties: {
+        day: {type: "integer", description: "星期几：1=周一 … 7=周日", minimum: 1, maximum: 7}
+      }, required: ["day"]}
+    }}
+  ];
 
   const el = {};
   ["aiBall", "aiCapsule", "aiCapsuleText", "aiWindow", "aiHead", "aiTitle", "aiConfigBtn", "aiMinimize", "aiClose",
@@ -43,6 +94,7 @@
     messages: [],
     streaming: false, requestId: 0, abort: null,
     sseBuffer: "", sseDone: false, assistantText: "", assistantReasoning: "", finishReason: "", usage: null,
+    sseToolCalls: [], pendingTools: [], toolRound: 0,
     contextOn: localStorage.getItem(AI_CONTEXT_KEY) !== "off",
     thinkingOn: localStorage.getItem(AI_THINKING_KEY) === "on",
     native: Boolean(root.CourseAppNative && root.CourseAppNative.aiChatRequest)
@@ -236,7 +288,8 @@
   }
 
   function buildMessages() {
-    const history = ai.messages.slice(-MAX_HISTORY_MESSAGES).map((item) => ({role: item.role, content: item.content}));
+    const history = ai.messages.slice(-MAX_HISTORY_MESSAGES).map((item) => ({...item}));
+    while (history.length && history[0].role !== "user") history.shift();
     if (typeof state !== "undefined" && state) {
       const today = new Date();
       const weekday = "一二三四五六日"[today.getDay() === 0 ? 6 : today.getDay() - 1];
@@ -255,7 +308,7 @@
   }
 
   function buildBody(keepModel) {
-    const body = {messages: buildMessages(), stream: true, stream_options: {include_usage: true}};
+    const body = {messages: buildMessages(), stream: true, stream_options: {include_usage: true}, tools: AI_TOOLS};
     if (keepModel) body.model = ai.config.model;
     body.max_tokens = ai.config.maxTokens || 4096;
     const preset = AI_PRESETS[ai.config.preset] || {};
@@ -275,6 +328,7 @@
   async function send() {
     const text = el.aiInput.value.trim();
     if (!text || ai.streaming) return;
+    if (ai.pendingTools.some((item) => item.status === "pending")) return showToast("请先处理上方的 AI 操作请求");
     if (!ai.config.baseUrl || !ai.config.model) {
       openWindow();
       showConfigView(true);
@@ -289,7 +343,7 @@
     updateSendButton();
     ai.requestId += 1;
     ai.sseBuffer = ""; ai.sseDone = false; ai.assistantText = ""; ai.assistantReasoning = "";
-    ai.finishReason = ""; ai.usage = null;
+    ai.finishReason = ""; ai.usage = null; ai.sseToolCalls = []; ai.toolRound = 0; ai.pendingTools = [];
     const id = String(ai.requestId);
     try {
       if (ai.native) {
@@ -297,6 +351,40 @@
         if (!result.ok) throw new Error(result.error || "无法发起请求");
       } else {
         await streamViaProxy(id, buildBody(false));
+      }
+    } catch (error) {
+      failAssistant(error.message);
+    }
+  }
+
+  async function continueChat() {
+    if (ai.streaming) return;
+    if (ai.toolRound >= MAX_TOOL_ROUNDS && ai.pendingTools.some((item) => item.status === "pending")) {
+      for (const action of ai.pendingTools) {
+        action.status = "rejected";
+        action.result = JSON.stringify({ok: false, error: "连续操作次数已达上限"});
+        updateToolCard(action);
+      }
+    }
+    if (ai.pendingTools.length) pushToolResults();
+    startStream();
+  }
+
+  function startStream() {
+    ai.streaming = true;
+    updateSendButton();
+    ai.toolRound += 1;
+    ai.requestId += 1;
+    ai.sseBuffer = ""; ai.sseDone = false; ai.assistantText = ""; ai.assistantReasoning = "";
+    ai.finishReason = ""; ai.usage = null; ai.sseToolCalls = [];
+    startAssistantBubble();
+    const id = String(ai.requestId);
+    try {
+      if (ai.native) {
+        const result = JSON.parse(root.CourseAppNative.aiChatRequest(id, joinEndpoint(ai.config.baseUrl, "chat/completions"), buildBody(true)));
+        if (!result.ok) throw new Error(result.error || "无法发起请求");
+      } else {
+        streamViaProxy(id, buildBody(false));
       }
     } catch (error) {
       failAssistant(error.message);
@@ -340,6 +428,16 @@
         const delta = choice.delta || {};
         if (delta.reasoning_content) appendReasoning(delta.reasoning_content);
         if (delta.content) appendContent(delta.content);
+        if (delta.tool_calls) {
+          for (const fragment of delta.tool_calls) {
+            const index = fragment.index ?? 0;
+            ai.sseToolCalls[index] = ai.sseToolCalls[index]
+              || {id: "", type: "function", function: {name: "", arguments: ""}};
+            if (fragment.id) ai.sseToolCalls[index].id = fragment.id;
+            if (fragment.function && fragment.function.name) ai.sseToolCalls[index].function.name = fragment.function.name;
+            if (fragment.function && fragment.function.arguments) ai.sseToolCalls[index].function.arguments += fragment.function.arguments;
+          }
+        }
         if (choice.finish_reason) ai.finishReason = choice.finish_reason;
       }
       if (chunk.usage) ai.usage = chunk.usage;
@@ -358,6 +456,29 @@
     updateSendButton();
     if (ai.finishReason === "length") appendContent("\n（回复因达到 max_tokens 上限被截断）");
     if (ai.finishReason === "content_filter") appendContent("\n（内容被服务商安全策略拦截）");
+    if (ai.finishReason === "tool_calls" && ai.sseToolCalls.length) {
+      if (bubbleRefs && !ai.assistantText) bubbleRefs.root.classList.add("hidden");
+      finalizeAssistantBubble();
+      ai.messages.push({role: "assistant", content: ai.assistantText || null, tool_calls: ai.sseToolCalls});
+      ai.pendingTools = ai.sseToolCalls.map((call) => {
+        const parsed = parseToolArgs(call);
+        const action = {call, status: "pending", result: "", args: parsed.args || {}, rendered: false};
+        if (parsed.error) {
+          action.status = "done";
+          action.result = JSON.stringify({ok: false, error: parsed.error});
+        } else if (call.function.name === "find_free_slots") {
+          action.status = "done";
+          action.result = JSON.stringify({ok: true, free_slots: toolFindFreeSlots(action.args.day)});
+        }
+        return action;
+      });
+      renderToolCards();
+      if (!ai.pendingTools.some((item) => item.status === "pending")) {
+        pushToolResults();
+        continueChat();
+      }
+      return;
+    }
     if (!ai.assistantText && !ai.assistantReasoning) {
       failAssistant("服务商未返回内容，请检查模型名称与设置。");
       return;
@@ -375,6 +496,12 @@
   function failAssistant(message) {
     ai.streaming = false;
     updateSendButton();
+    const lastMsg = ai.messages[ai.messages.length - 1];
+    if (lastMsg && lastMsg.tool_calls) {
+      for (const call of lastMsg.tool_calls) {
+        ai.messages.push({role: "tool", tool_call_id: call.id, content: JSON.stringify({ok: false, error: message})});
+      }
+    }
     if (bubbleRefs) {
       bubbleRefs.root.classList.remove("ai-msg-assistant");
       bubbleRefs.root.classList.add("ai-msg-error");
@@ -623,6 +750,15 @@
       el.aiBall.classList.toggle("hidden", !el.aiBallVisible.checked);
       if (!el.aiBallVisible.checked) closeWindow();
     });
+    el.aiMessages.addEventListener("click", (event) => {
+      const confirmBtn = event.target.closest("[data-tool-confirm]");
+      const cancelBtn = event.target.closest("[data-tool-cancel]");
+      if (!confirmBtn && !cancelBtn) return;
+      const card = (confirmBtn || cancelBtn).closest(".ai-tool-card");
+      if (!card) return;
+      const action = ai.pendingTools[Number(card.dataset.toolIndex)];
+      if (action) resolveTool(action, Boolean(confirmBtn));
+    });
 
     makeDraggable(el.aiBall, el.aiBall, AI_BALL_POS_KEY, true, () => openWindow(), true);
     makeDraggable(el.aiHead, el.aiWindow, AI_WINDOW_POS_KEY, false, null);
@@ -655,6 +791,236 @@
     }
   };
   root.onAiModelsOnce = null;
+
+  function parseToolArgs(call) {
+    let args = {};
+    try {
+      args = JSON.parse(call.function.arguments || "{}");
+    } catch (error) {
+      return {error: "工具参数不是有效 JSON"};
+    }
+    if (typeof args !== "object" || args === null || Array.isArray(args)) return {error: "工具参数格式不正确"};
+    const validation = validateToolArgs(call.function.name, args);
+    if (validation.errors.length) return {error: "参数不合法：" + validation.errors.join("；")};
+    return {args: validation.clean};
+  }
+
+  function validateToolArgs(name, args) {
+    const errors = [];
+    const clean = {};
+    const intField = (key, min, max) => {
+      if (args[key] === undefined) return;
+      const value = Number(args[key]);
+      if (!Number.isInteger(value) || value < min || value > max) {
+        errors.push(`${key} 必须是 ${min}-${max} 的整数`);
+        return;
+      }
+      clean[key] = value;
+    };
+    const strField = (key, limit) => {
+      if (args[key] === undefined || args[key] === null) return;
+      const value = String(args[key]).replace(/\s+/g, " ").trim();
+      if (!value) return;
+      clean[key] = value.slice(0, limit);
+    };
+    intField("day", 1, 7);
+    intField("new_day", 1, 7);
+    intField("period_start", 1, 13);
+    intField("period_end", 1, 13);
+    intField("new_period_start", 1, 13);
+    intField("new_period_end", 1, 13);
+    strField("name", 80);
+    strField("code", 30);
+    strField("teacher", 40);
+    strField("new_teacher", 40);
+    strField("location", 100);
+    strField("new_location", 100);
+    strField("campus", 100);
+    strField("notes", 200);
+    if (args.weeks !== undefined) {
+      const weeks = normalizeToolWeeks(args.weeks);
+      if (!weeks) errors.push("weeks 必须是 1-30 的周次列表");
+      else clean.weeks = weeks;
+    }
+    if (args.new_weeks !== undefined) {
+      const weeks = normalizeToolWeeks(args.new_weeks);
+      if (!weeks) errors.push("new_weeks 必须是 1-30 的周次列表");
+      else clean.new_weeks = weeks;
+    }
+    if (name === "add_course") {
+      if (!clean.name) errors.push("缺少课程名称");
+      if (clean.day === undefined) errors.push("缺少星期");
+      if (clean.period_start === undefined || clean.period_end === undefined) errors.push("缺少节次");
+      if (!clean.weeks) errors.push("缺少周次");
+    }
+    if ((name === "update_course" || name === "delete_course") && !clean.name) errors.push("缺少课程名称");
+    if (name === "find_free_slots" && clean.day === undefined) errors.push("缺少星期");
+    if (clean.period_start !== undefined && clean.period_end !== undefined && clean.period_start > clean.period_end) errors.push("开始节次不能晚于结束节次");
+    if (clean.new_period_start !== undefined && clean.new_period_end !== undefined && clean.new_period_start > clean.new_period_end) errors.push("开始节次不能晚于结束节次");
+    return {errors, clean};
+  }
+
+  function normalizeToolWeeks(value) {
+    let weeks = null;
+    if (Array.isArray(value)) weeks = value.map(Number);
+    else if (typeof value === "string") {
+      try { weeks = parseWeeks(value); } catch (error) { return null; }
+    }
+    if (!Array.isArray(weeks)) return null;
+    weeks = [...new Set(weeks.map(Number))].filter((week) => Number.isInteger(week) && week >= 1 && week <= 30).sort((a, b) => a - b);
+    return weeks.length ? weeks : null;
+  }
+
+  function toolFindFreeSlots(day) {
+    const periods = weekGridPeriods();
+    const busy = new Map();
+    for (const session of state.sessions) {
+      if (session.day !== day) continue;
+      if (!(session.weeks || []).includes(selectedWeek)) continue;
+      for (let p = session.periodStart; p <= session.periodEnd; p += 1) busy.set(p, session.name);
+    }
+    return periods
+      .filter((period) => !busy.has(period.number))
+      .map((period) => ({period: period.number, time: period.start && period.end ? `${period.start}–${period.end}` : ""}));
+  }
+
+  function executeTool(name, args) {
+    if (name === "find_free_slots") {
+      return {ok: true, free_slots: toolFindFreeSlots(args.day)};
+    }
+    if (name === "add_course") {
+      const session = {
+        id: `custom-${Date.now()}`,
+        code: args.code || "", name: args.name, teacher: args.teacher || "",
+        day: args.day, periodStart: args.period_start, periodEnd: args.period_end,
+        weeks: args.weeks, weekLabel: formatWeeks(args.weeks),
+        location: args.location || "", campus: args.campus || state.semester.campus || "",
+        notes: args.notes || "",
+        color: window.CourseExcelImport?.colorFor ? CourseExcelImport.colorFor(args.name) : DEFAULT_COLOR
+      };
+      const conflicts = state.sessions.filter((item) => item.day === session.day
+        && item.weeks.some((week) => session.weeks.includes(week))
+        && item.periodStart <= session.periodEnd && session.periodStart <= item.periodEnd)
+        .map((item) => item.name);
+      state.sessions.push(session);
+      syncActiveSemesterEntry();
+      return {ok: true, summary: `已新增 ${session.name} 周${SHORT_DAYS[session.day - 1]} 第${session.periodStart}-${session.periodEnd}节`,
+        conflicts: conflicts.length ? conflicts : undefined};
+    }
+    if (name === "update_course" || name === "delete_course") {
+      const matches = state.sessions.filter((item) => item.name === args.name || item.name.includes(args.name));
+      let narrowed = matches;
+      if (args.day !== undefined) narrowed = narrowed.filter((item) => item.day === args.day);
+      if (args.period_start !== undefined) narrowed = narrowed.filter((item) => item.periodStart === args.period_start);
+      if (!narrowed.length) return {ok: false, error: matches.length ? "找到多门同名课程，请说明星期或节次" : `没有找到课程「${args.name}」`};
+      if (narrowed.length > 1) return {ok: false, error: `有 ${narrowed.length} 门匹配课程，请说明星期或节次`};
+      const target = narrowed[0];
+      if (name === "delete_course") {
+        state.sessions = state.sessions.filter((item) => item.id !== target.id);
+        state.attendance = Object.fromEntries(Object.entries(state.attendance || {}).filter(([key]) => !key.endsWith("|" + target.id)));
+        syncActiveSemesterEntry();
+        return {ok: true, summary: `已删除 ${target.name}`};
+      }
+      if (args.new_day !== undefined) target.day = args.new_day;
+      if (args.new_period_start !== undefined) target.periodStart = args.new_period_start;
+      if (args.new_period_end !== undefined) target.periodEnd = args.new_period_end;
+      if (args.new_weeks !== undefined) {
+        target.weeks = args.new_weeks;
+        target.weekLabel = formatWeeks(target.weeks);
+      }
+      if (args.new_teacher !== undefined) target.teacher = args.new_teacher;
+      if (args.new_location !== undefined) target.location = args.new_location;
+      syncActiveSemesterEntry();
+      return {ok: true, summary: `已修改 ${target.name}`};
+    }
+    return {ok: false, error: `不支持的工具：${name}`};
+  }
+
+  function describeToolCall(name, args) {
+    const dayName = (day) => (day ? `周${SHORT_DAYS[day - 1]}` : "");
+    if (name === "add_course") {
+      const rows = [["操作", "新增课程"], ["课程", args.name || ""],
+        ["时间", `${dayName(args.day)} 第${args.period_start}-${args.period_end}节`],
+        ["周次", args.weeks ? formatWeeks(args.weeks) : ""],
+        ["教师", args.teacher || ""], ["地点", args.location || ""]];
+      return {title: "AI 想新增课程", rows: rows.filter((row) => row[1])};
+    }
+    if (name === "update_course") {
+      const changes = [];
+      if (args.new_day !== undefined) changes.push(`改为${dayName(args.new_day)}`);
+      if (args.new_period_start !== undefined) changes.push(`节次改为第${args.new_period_start}-${args.new_period_end || args.new_period_start}节`);
+      if (args.new_weeks) changes.push(`周次改为${formatWeeks(args.new_weeks)}`);
+      if (args.new_teacher) changes.push(`教师改为${args.new_teacher}`);
+      if (args.new_location) changes.push(`地点改为${args.new_location}`);
+      return {title: "AI 想修改课程", rows: [["课程", args.name || ""]].concat(changes.map((item) => ["变更", item]))};
+    }
+    if (name === "delete_course") {
+      const scope = [dayName(args.day), args.period_start ? `第${args.period_start}节起` : ""].filter(Boolean).join(" ");
+      return {title: "AI 想删除课程", rows: [["课程", args.name || ""], ["限定", scope || "同名全部"]]};
+    }
+    return {title: `AI 请求调用 ${name}`, rows: []};
+  }
+
+  function renderToolCards() {
+    ai.pendingTools.forEach((action, index) => {
+      if (action.rendered) return;
+      action.rendered = true;
+      const info = describeToolCall(action.call.function.name, action.args);
+      const wrap = document.createElement("div");
+      wrap.className = "ai-msg ai-msg-tool";
+      wrap.innerHTML = `<div class="ai-tool-card" data-tool-index="${index}">
+        <strong>${escapeHtml(info.title)}</strong>
+        <div class="ai-tool-fields">${info.rows.map((row) => `<div><span>${escapeHtml(row[0])}</span><b>${escapeHtml(row[1])}</b></div>`).join("")}</div>
+        <div class="ai-tool-actions">
+          <button class="ai-btn primary" data-tool-confirm type="button">确认执行</button>
+          <button class="ai-btn" data-tool-cancel type="button">取消</button>
+        </div>
+      </div>`;
+      el.aiMessages.appendChild(wrap);
+    });
+    scrollMessages();
+  }
+
+  function updateToolCard(action) {
+    const index = ai.pendingTools.indexOf(action);
+    const card = el.aiMessages.querySelector(`[data-tool-index="${index}"]`);
+    if (!card) return;
+    const actions = card.querySelector(".ai-tool-actions");
+    if (actions) actions.innerHTML = `<span class="ai-tool-done">${action.status === "done" ? "✓ 已执行" : "已取消"}</span>`;
+  }
+
+  function pushToolResults() {
+    for (const action of ai.pendingTools) {
+      ai.messages.push({role: "tool", tool_call_id: action.call.id, content: action.result || "{}"});
+    }
+    ai.pendingTools = [];
+  }
+
+  async function resolveTool(action, approved) {
+    if (action.status !== "pending") return;
+    if (approved) {
+      const outcome = executeTool(action.call.function.name, action.args);
+      if (outcome.ok && action.call.function.name !== "find_free_slots") {
+        try {
+          await saveState("AI 已更新课表");
+        } catch (error) {
+          outcome.save_error = error.message;
+        }
+      }
+      action.status = "done";
+      action.result = JSON.stringify(outcome);
+      if (typeof render === "function") render();
+      if (typeof syncChips === "function") syncChips();
+    } else {
+      action.status = "rejected";
+      action.result = JSON.stringify({ok: false, error: "用户取消了该操作"});
+    }
+    updateToolCard(action);
+    if (!ai.pendingTools.some((item) => item.status === "pending")) {
+      pushToolResults();
+      await continueChat();
+    }
+  }
 
   ready(init);
 })(typeof window !== "undefined" ? window : globalThis);

@@ -73,7 +73,7 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("prefers-color-scheme: dark", html)
         self.assertIn("prefers-reduced-motion: reduce", styles)
         self.assertIn('name="theme-color" content="#243F7A"', html)
-        self.assertIn('CACHE_NAME = "course-app-v16"', service_worker)
+        self.assertIn('CACHE_NAME = "course-app-v17"', service_worker)
 
     def test_android_asset_entry_uses_classic_script(self):
         html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
@@ -493,6 +493,24 @@ class ScheduleBehaviorTests(unittest.TestCase):
         self.assertIn("attendance: {}", script)
         self.assertIn(".attend-chip", styles)
         self.assertIn(".attend-chip.has", styles)
+
+    def test_stats_view_aggregates_local_data(self):
+        html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "app" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn('data-view="stats"', html)
+        self.assertIn('id="statsView"', html)
+        self.assertIn('id="statsSemester"', html)
+        self.assertIn('id="statsAttendance"', html)
+        self.assertIn('id="statsDiary"', html)
+        self.assertIn('id="statsEvents"', html)
+        self.assertIn("function renderStats()", script)
+        self.assertIn("function pastLessonCount()", script)
+        self.assertIn("function drawMoodTrend()", script)
+        self.assertIn("moodCanvas", script)
+        self.assertIn(".stats-card", styles)
+        self.assertIn(".stats-bar", styles)
+        self.assertIn(".stats-view", styles)
 
     def test_state_validation(self):
         server.validate_state(server.EMPTY_STATE)

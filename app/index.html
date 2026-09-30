@@ -36,6 +36,7 @@
         <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none"/></symbol>
         <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3.5v2.4M12 18.1v2.4M3.5 12h2.4M18.1 12h2.4M6 6l1.7 1.7M16.3 16.3L18 18M18 6l-1.7 1.7M7.7 16.3L6 18"/></symbol>
         <symbol id="i-diary" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9.5 4v16M12.5 8.5h4M12.5 12h4"/></symbol>
+        <symbol id="i-chart" viewBox="0 0 24 24"><path d="M5 20V11M12 20V4M19 20v-6"/></symbol>
         <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/></symbol>
       </defs>
     </svg>
@@ -275,6 +276,21 @@
           </div>
         </section>
 
+        <section class="stats-view hidden" id="statsView">
+          <div class="manage-heading">
+            <div>
+              <p class="eyebrow">本机数据聚合</p>
+              <h2>统计</h2>
+            </div>
+          </div>
+          <div class="stats-grid">
+            <div class="stats-card" id="statsSemester"></div>
+            <div class="stats-card" id="statsAttendance"></div>
+            <div class="stats-card" id="statsDiary"></div>
+            <div class="stats-card" id="statsEvents"></div>
+          </div>
+        </section>
+
       </main>
 
       <nav class="bottom-nav" aria-label="主导航">
@@ -282,6 +298,7 @@
         <button class="nav-item" data-view="week"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg></span>周课表</button>
         <button class="nav-item" data-view="month"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-cal-month"/></svg></span>月课表</button>
         <button class="nav-item" data-view="diary"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-diary"/></svg></span>日记</button>
+        <button class="nav-item" data-view="stats"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg></span>统计</button>
         <button class="nav-item" data-view="manage"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></span>课程管理</button>
       </nav>
     </div>

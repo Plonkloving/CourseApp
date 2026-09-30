@@ -41,6 +41,8 @@ const elements = {
   eventCountdown: $("#eventCountdown"), periodEditor: $("#periodEditor"), eventEditor: $("#eventEditor"),
   attendanceStats: $("#attendanceStats"),
   semesterSelect: $("#semesterSelect"), addSemester: $("#addSemester"), deleteSemester: $("#deleteSemester"),
+  statsView: $("#statsView"), statsSemester: $("#statsSemester"), statsAttendance: $("#statsAttendance"),
+  statsDiary: $("#statsDiary"), statsEvents: $("#statsEvents"),
   diaryMonthLabel: $("#diaryMonthLabel"), diaryPrevMonth: $("#diaryPrevMonth"), diaryNextMonth: $("#diaryNextMonth"),
   todayButton: $("#todayButton"), weekSelect: $("#weekSelect"), courseDialog: $("#courseDialog"), courseForm: $("#courseForm"),
   deleteCourse: $("#deleteCourse"), formError: $("#formError"), toast: $("#toast"),
@@ -974,11 +976,13 @@ function switchView(view) {
   elements.monthView.classList.toggle("hidden", view !== "month");
   elements.manageView.classList.toggle("hidden", view !== "manage");
   elements.diaryView.classList.toggle("hidden", view !== "diary");
+  elements.statsView.classList.toggle("hidden", view !== "stats");
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   if (view === "week") renderWeekGrid();
   if (view === "month") renderMonthView();
   if (view === "manage") renderManageList();
   if (view === "diary") renderDiary();
+  if (view === "stats") renderStats();
   if (view === "notification") refreshNotificationSettings();
   positionWeekNowLine();
   positionDayNowLine();
@@ -1642,6 +1646,142 @@ function quoteTodayCourses() {
   const lines = sessions.map((session) =>
     `· ${periodTime(session)} ${session.name}${session.location ? ` @${session.location}` : ""}`);
   elements.diaryText.value = `今天的课：\n${lines.join("\n")}\n\n` + elements.diaryText.value;
+}
+
+function renderStats() {
+  if (!state) return;
+  const today = parseLocalDate(localDateKey(new Date()));
+  const weekOne = parseLocalDate(state.semester.weekOneStart);
+  const classStart = parseLocalDate(state.semester.classStartDate);
+  const totalWeeks = state.semester.totalWeeks || 19;
+
+  const currentWeek = Math.min(totalWeeks, Math.max(0, Math.floor((today - weekOne) / 86400000 / 7) + 1));
+  const pastLessons = pastLessonCount();
+  const pastHours = Math.round(pastLessons * 45 / 60);
+  elements.statsSemester.innerHTML = `<h3>学期进度</h3>`
+    + `<div class="stats-big">${currentWeek}<small>/${totalWeeks} 周</small></div>`
+    + `<div class="stats-bar"><span style="width:${Math.min(100, Math.round(currentWeek / totalWeeks * 100))}%"></span></div>`
+    + `<p>开学以来已上 ${pastLessons} 节课，约 ${pastHours} 小时。</p>`;
+
+  const counts = {present: 0, late: 0, leave: 0, absent: 0};
+  const perCourse = new Map();
+  for (const [key, status] of Object.entries(state.attendance || {})) {
+    if (counts[status] === undefined) continue;
+    counts[status] += 1;
+    const sessionId = key.split("|")[1];
+    const session = state.sessions.find((item) => item.id === sessionId);
+    const name = session ? session.name : "已删除课程";
+    const bucket = perCourse.get(name) || {recorded: 0, present: 0};
+    bucket.recorded += 1;
+    if (status === "present" || status === "late") bucket.present += 1;
+    perCourse.set(name, bucket);
+  }
+  const recorded = counts.present + counts.late + counts.leave + counts.absent;
+  let attendanceHtml = `<h3>考勤</h3>`;
+  if (!recorded) {
+    attendanceHtml += `<p>还没有考勤记录，在日课表点击课块右下角的徽章即可打卡。</p>`;
+  } else {
+    const rate = Math.round((counts.present + counts.late) / recorded * 100);
+    attendanceHtml += `<div class="stats-big">${rate}<small>% 出勤</small></div>`
+      + `<p>已记录 ${recorded} 节：到课 ${counts.present} · 迟到 ${counts.late} · 请假 ${counts.leave} · 旷课 ${counts.absent}</p>`;
+    for (const [name, bucket] of [...perCourse.entries()].sort((a, b) => a[0].localeCompare(b[0], "zh-CN"))) {
+      const percent = Math.round(bucket.present / bucket.recorded * 100);
+      attendanceHtml += `<div class="stats-course"><span>${escapeHtml(name)}</span><div class="stats-bar"><span style="width:${percent}%"></span></div><small>${bucket.present}/${bucket.recorded}</small></div>`;
+    }
+  }
+  elements.statsAttendance.innerHTML = attendanceHtml;
+
+  const diaries = state.diaries || [];
+  const diaryDates = new Set(diaries.map((item) => item.date));
+  let streak = 0;
+  const cursor = new Date();
+  if (!diaryDates.has(localDateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
+  while (diaryDates.has(localDateKey(cursor))) {
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  const monthCount = diaries.filter((item) => item.date.startsWith(localDateKey(new Date()).slice(0, 7))).length;
+  elements.statsDiary.innerHTML = `<h3>日记</h3>`
+    + `<div class="stats-big">${diaries.length}<small> 篇</small></div>`
+    + `<p>本月 ${monthCount} 篇 · 连续记录 ${streak} 天。</p>`
+    + `<canvas id="moodCanvas"></canvas>`
+    + (diaries.length ? "" : `<p>在“日记”页写下第一篇吧。</p>`);
+  if (diaries.length) drawMoodTrend();
+
+  const upcoming = (state.events || [])
+    .filter((item) => item.name && /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")) && item.date >= localDateKey(today))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  elements.statsEvents.innerHTML = `<h3>倒计时</h3>`
+    + (upcoming.length
+      ? upcoming.map((item) => {
+        const days = Math.round((parseLocalDate(item.date) - today) / 86400000);
+        return `<div class="stats-event"><span>${escapeHtml(item.name)}</span><strong>${days === 0 ? "今天" : days + " 天"}</strong></div>`;
+      }).join("")
+      : `<p>没有倒计时事件，可在“课程管理 → 设置”里添加。</p>`);
+}
+
+function pastLessonCount() {
+  if (!state) return 0;
+  const today = parseLocalDate(localDateKey(new Date()));
+  const weekOne = parseLocalDate(state.semester.weekOneStart);
+  const classStart = parseLocalDate(state.semester.classStartDate);
+  let count = 0;
+  for (const session of state.sessions) {
+    for (const week of session.weeks || []) {
+      const date = addDays(weekOne, (week - 1) * 7 + session.day - 1);
+      if (date < today && date >= classStart) count += session.periodEnd - session.periodStart + 1;
+    }
+  }
+  return count;
+}
+
+function drawMoodTrend() {
+  const canvas = document.getElementById("moodCanvas");
+  if (!canvas) return;
+  const scale = 2;
+  const width = 320;
+  const height = 100;
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  canvas.style.width = "100%";
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+  ctx.strokeStyle = "rgba(49,84,156,.18)";
+  ctx.lineWidth = 1;
+  for (const level of [1, 3, 5]) {
+    const y = height - 10 - (level - 1) / 4 * (height - 24);
+    ctx.beginPath();
+    ctx.moveTo(6, y);
+    ctx.lineTo(width - 6, y);
+    ctx.stroke();
+  }
+  const entries = (state.diaries || [])
+    .filter((item) => item.mood && /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .filter((item, index, list) => index === 0 || item.date !== list[index - 1].date)
+    .slice(-30);
+  if (entries.length < 2) {
+    ctx.fillStyle = "#65738d";
+    ctx.font = "500 11px 'Microsoft YaHei', sans-serif";
+    ctx.fillText(entries.length ? "记录满 2 天后显示趋势" : "暂无心情数据", 10, height / 2);
+    return;
+  }
+  const step = (width - 24) / (entries.length - 1);
+  const points = entries.map((item, index) => ({
+    x: 12 + index * step,
+    y: height - 10 - (item.mood - 1) / 4 * (height - 24)
+  }));
+  ctx.strokeStyle = "#31549c";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
+  ctx.stroke();
+  ctx.fillStyle = "#ec765b";
+  for (const point of points) {
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 window.onNativeShortcut = applyShortcutTarget;

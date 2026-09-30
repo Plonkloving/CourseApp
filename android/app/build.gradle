@@ -18,8 +18,8 @@ android {
         applicationId "com.local.courseschedule"
         minSdk 23
         targetSdk 35
-        versionCode 27
-        versionName "2.3.0"
+        versionCode 28
+        versionName "2.4.0"
         buildConfigField "String", "UPDATE_REPOSITORY", '"Plonkloving/CourseApp"'
     }
 

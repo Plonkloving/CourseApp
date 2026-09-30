@@ -184,6 +184,23 @@ main { padding-bottom: calc(108px + var(--safe-bottom)); }
 .diary-editor-actions { display: flex; justify-content: space-between; gap: 8px; }
 .month-diary-mark { position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%); font-size: 9px; line-height: 1; }
 #diaryText { width: 100%; min-height: 140px; resize: vertical; }
+.stats-view { padding: 12px 0; }
+.stats-grid { display: grid; gap: 10px; margin: 0 16px 14px; }
+.stats-card { border: 1px solid var(--glass-border); border-radius: var(--radius-m); background: var(--glass); box-shadow: var(--glass-shadow); padding: 14px 16px; -webkit-backdrop-filter: blur(var(--glass-blur)); backdrop-filter: blur(var(--glass-blur)); }
+.stats-card h3 { margin: 0 0 8px; font-size: 14px; color: var(--ink); }
+.stats-big { font-size: 30px; font-weight: 800; color: var(--ink); line-height: 1.1; }
+.stats-big small { font-size: 13px; font-weight: 700; color: var(--muted); }
+.stats-card p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.stats-bar { display: block; height: 6px; border-radius: 3px; background: rgba(119,135,170,.25); overflow: hidden; margin: 8px 0 2px; }
+.stats-bar span { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #31549c, #5f65b3); }
+.stats-course { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; margin-top: 8px; font-size: 12px; }
+.stats-course span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.stats-course .stats-bar { grid-column: 1 / -1; margin: 2px 0; }
+.stats-course small { color: var(--muted); font-weight: 800; }
+.stats-event { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink); }
+.stats-event:last-child { border-bottom: 0; }
+.stats-event strong { color: var(--accent); font-size: 13px; }
+#moodCanvas { width: 100%; height: auto; display: block; margin-top: 6px; }
 .attend-chip { position: absolute; right: 5px; bottom: 4px; min-width: 26px; height: 18px; padding: 0 5px; border-radius: 999px; border: 1px solid rgba(119,135,170,.35); background: rgba(255,255,255,.72); color: var(--muted); font-size: 10px; font-weight: 800; line-height: 16px; text-align: center; cursor: pointer; }
 .attend-chip.has { border-color: transparent; background: var(--attend-color, #2f6c54); color: white; }
 .day-block > span:not(.day-block-top) { padding-right: 26px; }
